@@ -1,0 +1,27 @@
+Package: ENRTsensitivity
+Type: Package
+Title: Sensitivity Analysis for Contamination in Egocentric-Network Randomized Trials
+Version: 0.1.0
+Authors@R:
+    person("Bar", "Weinstein",
+           email = "weinstein.bar@gmail.com",
+           role = c("aut", "cre"))
+Description: Implements the sensitivity analysis framework for egocentric-network
+    randomized trials (ENRTs) proposed by Weinstein and Nevo (2025).
+    Provides tools to conduct grid sensitivity analysis (GSA) and
+    probabilistic bias analysis (PBA) to assess the impact of ego-network
+    contamination on indirect and direct effect estimates.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Imports:
+    data.table,
+    parallel,
+    stats,
+    ggplot2,
+    proxy
+Suggests:
+    knitr,
+    rmarkdown
+NeedsCompilation: no
