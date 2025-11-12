@@ -16,7 +16,7 @@ where latent ego-ego or alter-ego edges are missing from the observed data.
 
 This contamination can bias the standard estimators for the **Indirect Effect (IE)** and **Direct Effect (DE)**.
 
-The `ENRTsensitivity` package provides a framework to assess the robustness of causal estimates to such contamination. It implements the bias-corrected estimators from the paper [cite: 162, 190] and provides two methods for analysis:
+The `ENRTsensitivity` package provides a framework to assess the robustness of causal estimates to such contamination. It implements the bias-corrected estimators from the paper and provides two methods for analysis:
 
 1.  **Grid Sensitivity Analysis (GSA):** Compute estimates over a grid of sensitivity parameters.
 2.  **Probabilistic Bias Analysis (PBA):** Compute the distribution of bias-corrected estimates based on prior distributions for the sensitivity parameters.
@@ -52,7 +52,7 @@ F_a <- Z_e[ego_id_a] # Observed exposure
 Y_a <- rbinom(n_a, 1, 0.3 - 0.1 * F_a)
 
 # 2. Define Sensitivity Parameter Grids
-# We'll use the homogeneous model (Example 2 from the paper) [cite: 232]
+# We'll use the homogeneous model (Example 2 from the paper)
 
 # IE: Grid of expected missing alter-ego edges (m_a)
 m_a_grid <- c(0, 50, 100)
@@ -64,7 +64,7 @@ m_e_grid <- c(0, 25, 50)
 pi_list_ee_homo <- pi_homo(m_vec = m_e_grid, n_e = n_e,
                            type = "ego", pz = pz)
 
-# DE: Grid for kappa (treatment-exposure interaction) [cite: 180]
+# DE: Grid for kappa (treatment-exposure interaction)
 kappa_grid <- c(1, 1.5, 2)
 
 # 3. Format Parameter Lists for enrt_sa
@@ -92,11 +92,11 @@ print(sa_results$null_results$IE)
 print(sa_results$sa_results$IE)
 
 # Show the plot for Indirect Effects
-# This recreates a plot similar to Figure 2 in the paper [cite: 379]
+# This recreates a plot similar to Figure 2 in the paper
 print(sa_results$ie_rd_plot)
 
 # Show the plot for Direct Effects
-# This recreates a plot similar to Figure 3 in the paper [cite: 406]
+# This recreates a plot similar to Figure 3 in the paper
 print(sa_results$de_rd_plot)
 ```
 
