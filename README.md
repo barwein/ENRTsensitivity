@@ -81,7 +81,6 @@ sa_results <- enrt_sa(
   pi_lists_alter_ego = pi_lists_ae,
   kappa_vec = kappa_grid,
   pz = pz,
-  bootstrap = FALSE # Use fast empirical variance
 )
 
 # 5. View Results
@@ -128,7 +127,6 @@ pi_args_de_list <- list(n_e = n_e, type = "ego", pz = pz)
 pba_results <- enrt_pba(
   Y_e = Y_e, Y_a = Y_a,
   Z_e = Z_e, F_a = F_a, ego_id_a = ego_id_a,
-  bootstrap = FALSE, # Use Normal Approximation
   B = 500,           # Number of Monte Carlo samples
   pz = pz,
   prior_func_ie = prior_ie_func,

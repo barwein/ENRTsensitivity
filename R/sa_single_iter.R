@@ -17,6 +17,7 @@
 #' @param F_a A binary numeric vector (0 or 1) of `observed` exposures for alters.
 #' @param ego_id_a A numeric vector mapping each alter to their ego's index
 #'        (1 to n_e). Required for IE variance.
+#' @param augmented Logical whether to use augmented estimators
 #' @param reg_model_egos A function for the egos' outcome regression model.
 #' @param reg_model_alters A function for the alters' outcome regression model.
 #' @param formula_egos A formula for the egos' regression model.
@@ -28,8 +29,6 @@
 #' @param kappa_vec A numeric vector of values for the kappa sensitivity parameter.
 #' @param pz The known probability of an ego being assigned to treatment, Pr(Z=1).
 #' @param n_folds The number of folds for cross-fitting outcome models.
-#' @param estimate_var Logical. If TRUE, compute and return empirical variance
-#'        estimates. If FALSE, variance columns will be NA.
 #' @param ... Additional arguments passed to the regression model functions.
 #'
 #' @return A list containing two data.tables:
@@ -47,16 +46,16 @@ SA_one_iter <- function(Y_e,
                         Z_e,
                         F_a,
                         ego_id_a,
-                        reg_model_egos,
-                        reg_model_alters,
-                        formula_egos,
-                        formula_alters,
+                        augmented = FALSE,
+                        reg_model_egos = NULL,
+                        reg_model_alters = NULL,
+                        formula_egos = NULL,
+                        formula_alters = NULL,
                         pi_list_ego_ego,
                         pi_list_alter_ego,
                         kappa_vec,
                         pz,
                         n_folds = 2,
-                        estimate_var = FALSE,
                         ...){
 
   # Check inputs
@@ -77,21 +76,32 @@ SA_one_iter <- function(Y_e,
   n_e <- length(Y_e)
 
   # 1. Estimate outcome models using cross-fitting
-  outcomes_res <- estimate_outcome_models_cf(
-    Y_e = Y_e,
-    Y_a = Y_a,
-    X_e = X_e,
-    X_a = X_a,
-    Z_e = Z_e,
-    F_a = F_a,
-    ego_id_a = ego_id_a,
-    reg_model_egos = reg_model_egos,
-    reg_model_alters = reg_model_alters,
-    formula_egos = formula_egos,
-    formula_alters = formula_alters,
-    n_folds = n_folds,
-    ...
-  )
+  if (augmented){
+    outcomes_res <- estimate_outcome_models_cf(
+      Y_e = Y_e,
+      Y_a = Y_a,
+      X_e = X_e,
+      X_a = X_a,
+      Z_e = Z_e,
+      F_a = F_a,
+      ego_id_a = ego_id_a,
+      reg_model_egos = reg_model_egos,
+      reg_model_alters = reg_model_alters,
+      formula_egos = formula_egos,
+      formula_alters = formula_alters,
+      n_folds = n_folds,
+      # ...
+      family = binomial(link = "logit") # Passed to glm()
+
+    )
+  } else{
+    outcomes_res <- list(
+      mu_a_1 = rep(0, n_a), mu_a_0 = rep(0, n_a),
+      mu_e_1 = rep(0, n_e), mu_e_0 = rep(0, n_e),
+      folds_ids_e = rep(1, n_e), # Single fold containing all indices
+      folds_ids_a = rep(1, n_a)
+    )
+  }
 
   # 2. Bias-corrected IE estimates
   # 'IE_corrected' is data.table with columns: pi_param, ie_rd, ie_rd_var
@@ -104,8 +114,8 @@ SA_one_iter <- function(Y_e,
     pz = pz,
     ego_id_a = ego_id_a,
     n_e = n_e,
-    estimate_var = estimate_var
-  )
+    folds_ids_a = outcomes_res$folds_ids_a
+    )
 
   # 3. Bias-corrected DE estimates
   # 'DE_corrected' is data.table with columns: pi_param, kappa, de_rd, de_rd_var
@@ -117,7 +127,7 @@ SA_one_iter <- function(Y_e,
     pi_list = pi_list_ego_ego,
     kappa_vec = kappa_vec,
     pz = pz,
-    estimate_var = estimate_var
+    folds_ids_e = outcomes_res$folds_ids_e
   )
 
   return(list(

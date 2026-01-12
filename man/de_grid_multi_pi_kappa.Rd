@@ -12,7 +12,7 @@ de_grid_multi_pi_kappa(
   pi_list,
   kappa_vec,
   pz,
-  estimate_var = FALSE
+  folds_ids_e = NULL
 )
 }
 \arguments{
@@ -30,7 +30,7 @@ de_grid_multi_pi_kappa(
 
 \item{pz}{Scalar Pr(Z=1).}
 
-\item{estimate_var}{Logical. If TRUE, compute empirical variance.}
+\item{folds_ids_a}{Vector indicating fold assignments for alters.}
 }
 \value{
 A data.table with columns: pi_param, kappa, de_rd, de_rd_var.

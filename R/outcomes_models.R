@@ -34,6 +34,8 @@
 #'   \item{mu_a_0}{Predictions for alters with F=0 (length n_a).}
 #'   \item{mu_e_1}{Predictions for egos with Z=1 (length n_e).}
 #'   \item{mu_e_0}{Predictions for egos with Z=0 (length n_e).}
+#'   \item{folds_ids_e}{A numeric vector indicating the fold assignment for each ego (length n_e).}
+#'   \item{folds_ids_a}{A numeric vector indicating the fold assignment for each alter (length n_a).}
 #' }
 #' @keywords internal
 #'
@@ -60,11 +62,14 @@ estimate_outcome_models_cf <- function(Y_e,
       || is.null(formula_egos) || !inherits(formula_egos, "formula")
       || is.null(formula_alters) || !inherits(formula_alters, "formula")) {
     warning("Invalid regression model functions or formulas. Setting predicted values to zero")
+    warning("--- Using non-augmented estimators ---")
     return(list(
       mu_a_1 = numeric(n_a),
       mu_a_0 = numeric(n_a),
       mu_e_1 = numeric(n_e),
-      mu_e_0 = numeric(n_e)
+      mu_e_0 = numeric(n_e),
+      folds_ids_e = NULL,
+      folds_ids_a = NULL
     ))
   }
 
@@ -171,20 +176,22 @@ estimate_outcome_models_cf <- function(Y_e,
     # 3. Fit Models on Training Data
     fit_e <-
       do.call(reg_model_egos,
-              list(formula = formula_egos, data = dat_e_train, ...))
+              list(formula = formula_egos, data = dat_e_train,
+                   # family = binomial(link = "logit") ))
+                   ...))
     fit_a <-
       do.call(reg_model_alters,
-              list(formula = formula_alters, data = dat_a_train, ...))
+              list(formula = formula_alters, data = dat_a_train,
+                   # family = binomial(link = "logit") ))
+                   ...))
 
 
     # 4. Prepare Hold-out Data for Prediction
 
     # --- For Ego Model (mu_e_1, mu_e_0) ---
     X_e_holdout <-
-      if (is.null(X_e))
-        NULL
-    else
-      X_e[idx_e_holdout, , drop = FALSE]
+      if (is.null(X_e)){NULL}
+      else{X_e[idx_e_holdout, , drop = FALSE]}
     newdata_e_z1 <- prepare_newdata(X_e_holdout, 1, "Z")
     newdata_e_z0 <- prepare_newdata(X_e_holdout, 0, "Z")
 
@@ -221,7 +228,9 @@ estimate_outcome_models_cf <- function(Y_e,
     mu_a_1 = mu_a_1,
     mu_a_0 = mu_a_0,
     mu_e_1 = mu_e_1,
-    mu_e_0 = mu_e_0
+    mu_e_0 = mu_e_0,
+    folds_ids_e = fold_ids_e,
+    folds_ids_a = fold_ids_a
   )
 
   # Final check for any NA/NaN (e.g., from failed folds)

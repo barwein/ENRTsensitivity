@@ -6,99 +6,6 @@
 
 # Indirect effects --------------------------------------------------------
 
-#' @title Calculate augmented IE_RD and its cluster-robust variance for a single pi_vec
-#'
-#' @param Y_a Vector of alter outcomes.
-#' @param F_a Vector of alter observed exposures.
-#' @param mu_a_1 Vector of cross-fit predictions E[Y|F=1,X].
-#' @param mu_a_0 Vector of cross-fit predictions E[Y|F=0,X].
-#' @param pi_vec Vector of pi_i^a sensitivity parameters.
-#' @param pz Scalar, Pr(Z=1) among egos.
-#' @param ego_id_a Vector mapping alters to ego indices (1 to n_e).
-#' @param n_e Total number of egos (for variance calculation).
-#' @param estimate_var Logical. If TRUE, compute cluster-robust variance.
-#'
-#' @return A numeric vector c(ie_rd, ie_rd_var)
-#'
-#' @keywords internal
-#'
-ie_aug_point_one_param_ <- function(Y_a,
-                                    F_a,
-                                    mu_a_1,
-                                    mu_a_0,
-                                    pi_vec,
-                                    pz,
-                                    ego_id_a,
-                                    n_e,
-                                    estimate_var = FALSE) {
-
-  n_a <- length(Y_a)
-
-  # Input validation
-  # Ensure pi_vec is valid
-  if (any(pi_vec >= 1)) {
-    warning("pi_vec contains values >= 1. IE estimate will be NA.")
-    pi_vec[pi_vec >= 1] <- NA
-  }
-
-  # Weights for bias correction
-  weights <- (1 - pz) / (1 - pi_vec)
-
-  I_1 <- (F_a == 1)
-  I_0 <- (F_a == 0)
-
-  # Augmented estimator components
-  term_1 <- (I_1 * (Y_a - mu_a_1)) / pz
-  term_2 <- (I_0 * (Y_a - mu_a_0)) / (1 - pz)
-  term_3 <- mu_a_1 - mu_a_0
-
-  inside_sum <- term_1 - term_2 + term_3
-
-  # Element-wise product: alpha_i^a * phi_i^a
-  alpha_phi_a <- weights * inside_sum
-  # Final estimator for RD
-  ie_rd_ <- mean(alpha_phi_a, na.rm = TRUE)
-
-  # --- Variance Estimation ---
-  # Estimate variance with cluster-robust empirical variance estimator
-  ie_rd_var <- NA_real_
-
-  if (estimate_var) {
-    if (is.null(ego_id_a) || is.null(n_e)) {
-      stop("ego_id_a and n_e must be provided to estimate cluster-robust variance for IE.")
-    }
-    if (n_e <= 1) {
-      warning("Cannot compute variance with n_e <= 1. Setting var to NA.")
-    } else {
-      # Create T_i for all egos (i in R_e)
-      # Egos with no alters will have T_i = 0
-      T_full <- numeric(n_e)
-
-      # Sum (alpha_j^a * phi_j^a) for alters grouped by their ego
-      # This creates a named vector where names are ego indices
-      T_i_vec <- tapply(alpha_phi_a, ego_id_a, sum, na.rm = TRUE)
-
-      # Get the ego indices that actually have alters
-      ego_indices_with_alters <- as.numeric(names(T_i_vec))
-
-      # Place the sums into the full vector
-      T_full[ego_indices_with_alters] <- T_i_vec
-
-      # T_bar = (1/n_e) * sum(T_i)
-      T_bar <- mean(T_full)
-
-      # Sum of squared differences
-      sum_sq_diff <- sum((T_full - T_bar) ^ 2, na.rm = TRUE)
-
-      # Variance estimator from appendix
-      ie_rd_var <- (n_e / (n_a * n_a * (n_e - 1))) * sum_sq_diff
-    }
-  }
-
-  return(c(ie_rd = ie_rd_, ie_rd_var = ie_rd_var))
-}
-
-
 #' @title Calculate augmented IE estimates for a grid of pi_params
 #'
 #' @param Y_a Vector of alter outcomes.
@@ -109,7 +16,7 @@ ie_aug_point_one_param_ <- function(Y_a,
 #' @param pz Scalar, Pr(Z=1) among egos.
 #' @param ego_id_a Vector mapping alters to ego indices (1 to n_e).
 #' @param n_e Total number of egos.
-#' @param estimate_var Logical. If TRUE, compute cluster-robust variance.
+#' @param folds_ids_a Vector indicating fold assignments for alters.
 #'
 #' @return A data.table with pi_param, ie_rd, ie_rd_var
 #'
@@ -123,15 +30,19 @@ ie_aug_point_grid_ <- function(Y_a,
                                pz,
                                ego_id_a = NULL,
                                n_e = NULL,
-                               estimate_var = FALSE) {
+                               folds_ids_a = NULL) {
   # Input validation
   n_a <- length(Y_a)
+  if (is.null(folds_ids_a)){
+    folds_ids_a <- rep(1, n_a)
+  }
+  n_folds <- length(unique(folds_ids_a))
+
   if (is.null(mu_a_1) || is.null(mu_a_0)) {
     mu_a_1 <- rep(0, n_a)
     mu_a_0 <- rep(0, n_a)
     warning("mu_a_1 or mu_a_0 is NULL. Setting both to zero vectors.")
-  }
-  else{
+  } else{
     if (n_a != length(F_a) ||
         n_a != length(mu_a_1) ||
         n_a != length(mu_a_0)) {
@@ -142,170 +53,100 @@ ie_aug_point_grid_ <- function(Y_a,
     stop("Invalid treatment probability 'pz' input.")
   }
 
-  ie_grid_mat <- vapply(pi_list, function(pi_v) {
-    # Ensure pi_v has correct length if it's not scalar
-    if (length(pi_v) > 1 && length(pi_v) != n_a) {
-      stop(paste("Heterogeneous pi_vec length", length(pi_v),
-                 "does not match alter sample size", n_a))
+  results_list <- list()
+  for (i in seq_along(pi_list)) {
+    pi_vec <- pi_list[[i]]
+
+    # Validate pi_vec
+    if (any(pi_vec >= 1)) {
+      warning("pi_vec contains values >= 1. IE is undefined.")
+      results_list <- data.table::rbindlist(list(results_list,
+                                                 data.table::data.table(
+                                       pi_param = names(pi_list)[i],
+                                       ie_rd = NA,
+                                       ie_rd_var = NA
+                                     )))
+      next
     }
 
-    out_vec <- ie_aug_point_one_param_(
-      Y_a = Y_a,
-      F_a = F_a,
-      mu_a_1 = mu_a_1,
-      mu_a_0 = mu_a_0,
-      pi_vec = pi_v,
-      pz = pz,
-      ego_id_a = ego_id_a,
-      n_e = n_e,
-      estimate_var = estimate_var
-    )
-    out_vec
-  }, FUN.VALUE = numeric(2)) # Expecting a vector of length 2 (ie_rd, ie_rd_var)
+    # --- Fold-Specific Estimation ---
+    est_k <- numeric(n_folds)
+    var_k <- numeric(n_folds)
+    n_k_vec <- numeric(n_folds) # Number of alters in fold k used for weighting
 
-  res_dt <- data.table(
-    pi_param = as.numeric(names(pi_list)),
-    ie_rd = ie_grid_mat[1,],      # First row is ie_rd
-    ie_rd_var = ie_grid_mat[2,] # Second row is ie_rd_var
-  )
-  return(res_dt)
+
+    for (k in unique(folds_ids_a)) {
+      # Indices for this fold
+      idx_a <- folds_ids_a == k
+
+      # Subset data for this fold
+      Y_a_k <- Y_a[idx_a]
+      F_a_k <- F_a[idx_a]
+      mu_a_1_k <- mu_a_1[idx_a]
+      mu_a_0_k <- mu_a_0[idx_a]
+
+      ego_id_a_k <- ego_id_a[idx_a]
+
+      if(length(pi_vec) == 1) {
+        pi_vec_k <- pi_vec
+      } else{
+        pi_vec_k <- pi_vec[idx_a]
+      }
+
+      # Fold size
+      n_a_k <- sum(idx_a)
+      n_k_vec[k] <- n_a_k
+
+      # Determine unique egos in this fold to get n_e_k
+      unique_egos_k <- unique(ego_id_a_k)
+
+      if (n_a_k == 0) next
+
+      # --- Point Estimate for Fold k ---
+      # Bias adjustment terms
+      term1 <- (Y_a_k - mu_a_1_k) * F_a_k / pz
+      term2 <- (Y_a_k - mu_a_0_k) * (1 - F_a_k) / (1-pz)
+      resid_diff <- mu_a_1_k - mu_a_0_k + term1 - term2
+      weights_k <- (1 - pz) / (1 - pi_vec_k)
+      weighted_resid_diff <- weights_k * resid_diff
+
+      # Point estimates for fold k:
+      est_k[k] <- mean(weighted_resid_diff, na.rm = TRUE) # This is IE_RD_k
+
+      # Variance estimate for Fold k:
+      # Sum over alters for each ego-network
+      D_alter_i <- weights_k*(term1 - term2)
+      T_i <- tapply(D_alter_i, ego_id_a_k, sum)
+      mean_T_i <- mean(T_i, na.rm = TRUE)
+      sum_sq_diff <- sum((T_i - mean_T_i) ^ 2, na.rm = TRUE)
+      var_k[k] <- sum_sq_diff / n_a_k^2
+    }
+
+    # --- Aggregation ---
+    # Global N
+    N_total <- sum(n_k_vec)
+    if (N_total != n_a){
+      warning("Total number of alters across folds does not equal n_a.")
+    }
+    weights <- n_k_vec / N_total
+
+    # Weighted Sum of Estimates
+    ie_rd_agg <- sum(weights * est_k, na.rm = TRUE)
+    ie_rd_var_agg <- sum((weights^2) * var_k, na.rm = TRUE)
+
+    results_list <- data.table::rbindlist(list(results_list,
+                                         data.table::data.table(
+                                     pi_param = names(pi_list)[i],
+                                     ie_rd = ie_rd_agg,
+                                     ie_rd_var = ie_rd_var_agg
+                                   )))
+  }
+
+  return(results_list)
 }
 
 
 # Direct effects ----------------------------------------------------------
-
-
-#' @title Calculate bias-corrected DE_RD for a single (pi, kappa) combination
-#'
-#' @description
-#' Implements the augmented randomization-based estimator:
-#' DE_aug = (1/n_e) * sum[ w_i * phi_i ]
-#' where w_i = 1 / (1 + pi_i * (kappa - 1))
-#' and   phi_i = [ I(Z=1)(Y-m1)/pz - I(Z=0)(Y-m0)/(1-pz) + (m1 - m0) ]
-#'
-#' @param Y_e Vector of observed ego outcomes.
-#' @param Z_e Vector of observed ego treatments.
-#' @param mu_e_1 Vector of predictions m^e_i(1) = E[Y|Z=1, X].
-#' @param mu_e_0 Vector of predictions m^e_i(0) = E[Y|Z=0, X].
-#' @param pi_vec Vector of pi_i^e values.
-#' @param kappa_ Scalar kappa value.
-#' @param pz Scalar Pr(Z=1).
-#' @param estimate_var Logical. If TRUE, compute empirical variance.
-
-#' @return A numeric vector `c(de_rd, de_rd_var)`
-#'
-#' @keywords internal
-#'
-de_point_one_pi_kappa <- function(Y_e,
-                                  Z_e,
-                                  mu_e_1,
-                                  mu_e_0,
-                                  pi_vec,
-                                  kappa_,
-                                  pz,
-                                  estimate_var = FALSE) {
-
-  # --- 1. Calculate the augmented difference term (A_i) ---
-  I_1 <- (Z_e == 1)
-  I_0 <- (Z_e == 0)
-
-  term_1 <- (I_1 * (Y_e - mu_e_1)) / pz
-  term_2 <- (I_0 * (Y_e - mu_e_0)) / (1 - pz)
-  term_3 <- mu_e_1 - mu_e_0
-
-  # Vector of augmented differences, one per ego
-  aug_diff <- term_1 - term_2 + term_3
-
-  # --- 2. Calculate the DE weight ---
-  # Ensure pi_vec is broadcastable if it's a scalar
-  if (length(pi_vec) == 1) {
-    pi_vec <- rep(pi_vec, length(Y_e))
-  }
-
-  de_weight <- 1 / (1 + pi_vec * (kappa_ - 1))
-
-  if (any(is.infinite(de_weight)) || any(is.na(de_weight))) {
-    warning("DE weights are non-finite. Check pi_vec and kappa values. Setting weights to zero.")
-    de_weight[is.infinite(de_weight) | is.na(de_weight)] <- 0
-  }
-
-  # --- 3. Calculate final estimator (alpha_i^e * phi_i^e) ---
-  alpha_phi_e <- de_weight * aug_diff
-  de_rd_ <- mean(alpha_phi_e, na.rm = TRUE)
-
-  # --- 4. Variance Estimation ---
-  de_rd_var <- NA_real_
-  n_e <- length(Y_e)
-  if (estimate_var) {
-    if (n_e <= 1) {
-      warning("Cannot compute variance with n_e <= 1. Setting var to NA.")
-    } else {
-      # alpha_phi_e - DE_aug
-      sum_sq_diff <- sum((alpha_phi_e - de_rd_) ^ 2, na.rm = TRUE)
-
-      # Variance estimator from appendix
-      de_rd_var <- (1 / (n_e * (n_e - 1))) * sum_sq_diff
-    }
-  }
-
-  return(c(de_rd = de_rd_, de_rd_var = de_rd_var))
-}
-
-#' @title Estimate bias-corrected DE for a single pi_param and a grid of kappa values
-#'
-#' @param Y_e Vector of observed ego outcomes.
-#' @param Z_e Vector of observed ego treatments.
-#' @param mu_e_1 Vector of predictions E[Y|Z=1, X].
-#' @param mu_e_0 Vector of predictions E[Y|Z=0, X].
-#' @param pi_vec Vector of pi_i^e values.
-#' @param kappa_vec_ Vector of kappa values to iterate over.
-#' @param pz Scalar Pr(Z=1).
-#' @param estimate_var Logical. If TRUE, compute empirical variance.
-#'
-#' @return A data.table with columns: kappa, de_rd, de_rd_var
-#'
-#' @keywords internal
-#'
-de_grid_one_pi_multi_kappa <- function(Y_e,
-                                       Z_e,
-                                       mu_e_1,
-                                       mu_e_0,
-                                       pi_vec,
-                                       kappa_vec_,
-                                       pz,
-                                       estimate_var = FALSE) {
-
-  # Ensure pi_vec is a numeric vector
-  pi_vec_numeric <- unlist(pi_vec)
-
-  # Create a named list of kappa values for vapply
-  kappa_list <- as.list(kappa_vec_)
-  names(kappa_list) <- round(kappa_vec_, 3)
-
-  # Iterate over all kappa values, expecting 2 return values (mean, var)
-  de_kappa_mat <- vapply(kappa_list, function(kappa_) {
-    out_vec <- de_point_one_pi_kappa(
-      Y_e = Y_e,
-      Z_e = Z_e,
-      mu_e_1 = mu_e_1,
-      mu_e_0 = mu_e_0,
-      pi_vec = pi_vec_numeric,
-      kappa_ = kappa_,
-      pz = pz,
-      estimate_var = estimate_var
-    )
-    out_vec
-  },
-  FUN.VALUE = numeric(2)) # Expecting vector of length 2
-
-  res_dt <- data.table(
-    kappa = names(kappa_list),
-    de_rd = de_kappa_mat[1,],      # First row is de_rd
-    de_rd_var = de_kappa_mat[2,]  # Second row is de_rd_var
-  )
-  return(res_dt)
-}
-
 
 #' @title Estimate bias-corrected DE estimates for a grid of (pi_param, kappa) combinations
 #'
@@ -316,7 +157,7 @@ de_grid_one_pi_multi_kappa <- function(Y_e,
 #' @param pi_list A list of pi_vecs.
 #' @param kappa_vec A vector of kappa values.
 #' @param pz Scalar Pr(Z=1).
-#' @param estimate_var Logical. If TRUE, compute empirical variance.
+#' @param folds_ids_a Vector indicating fold assignments for alters.
 #'
 #' @return A data.table with columns: pi_param, kappa, de_rd, de_rd_var.
 #'
@@ -329,17 +170,20 @@ de_grid_multi_pi_kappa <- function(Y_e,
                                    pi_list,
                                    kappa_vec,
                                    pz,
-                                   estimate_var = FALSE) {
+                                   folds_ids_e = NULL) {
 
   # --- Input Checks ---
   n_e <- length(Y_e)
+  if (is.null(folds_ids_e)){
+    folds_ids_e <- rep(1, n_e)
+  }
+  n_folds <- length(unique(folds_ids_e))
 
   if(is.null(mu_e_1) || is.null(mu_e_0)) {
     warning("mu_e_1 or mu_e_0 is NULL. Setting both to zero vectors.")
     mu_e_1 <- rep(0, n_e)
     mu_e_0 <- rep(0, n_e)
-  }
-  else{
+  }  else{
     if (n_e != length(mu_e_1) ||
         n_e != length(mu_e_0)) {
       stop("Y_e, mu_e_1, and mu_e_0 must have the same length (n_e).")
@@ -353,25 +197,74 @@ de_grid_multi_pi_kappa <- function(Y_e,
     stop("Some pi_vec contains negative values.")
   }
 
-  # Iterate over all pi_list entries
-  de_list <- lapply(pi_list, function(pi_v) {
-    de_grid_one_pi_multi_kappa(
-      Y_e = Y_e,
-      Z_e = Z_e,
-      mu_e_1 = mu_e_1,
-      mu_e_0 = mu_e_0,
-      pi_vec = pi_v,
-      kappa_vec_ = kappa_vec,
-      pz = pz,
-      estimate_var = estimate_var
-    )
-  })
+  # Two-dim grid of params
+  grid_params <- expand.grid(pi_idx = seq_along(pi_list), kappa = kappa_vec)
 
-  res_dt <- rbindlist(de_list, idcol = "pi_param")
-  res_dt$pi_param <- as.numeric(res_dt$pi_param)
-  res_dt$kappa <- as.numeric(res_dt$kappa)
+  results_list <- list()
 
-  return(res_dt)
+  for (r in 1:nrow(grid_params)){
+    idx <- grid_params$pi_idx[r]
+    k_val <- grid_params$kappa[r]
+    pi_vec <- pi_list[[idx]]
+
+    est_k <- numeric(n_folds)
+    var_k <- numeric(n_folds)
+    n_k_vec <- numeric(n_folds)
+
+    # Run over the folds
+    for (k in 1:n_folds) {
+      idx_e <- folds_ids_e == k
+      n_e_k <- sum(idx_e)
+      n_k_vec[k] <- n_e_k
+
+      # Subset data
+      Y_e_k <- Y_e[idx_e]
+      Z_e_k <- Z_e[idx_e]
+      mu_e_1_k <- mu_e_1[idx_e]
+      mu_e_0_k <- mu_e_0[idx_e]
+      if(length(pi_vec) == 1) {
+        pi_vec_k <- pi_vec
+      } else{
+        pi_vec_k <- pi_vec[idx_e]
+      }
+
+
+      # --- Bias Adjustment (Ego level) ---
+      term1 <- (Y_e_k - mu_e_1_k) * Z_e_k / pz
+      term2 <- (Y_e_k - mu_e_0_k) * (1 - Z_e_k) / (1 - pz)
+      resid_diff <- mu_e_1_k - mu_e_0_k + term1 - term2
+      weights_k <-  1 / (1 + pi_vec_k * (k_val - 1))
+      weighted_resid_diff <- weights_k * resid_diff
+
+      # Point estimates for fold k:
+      est_k[k] <- mean(weighted_resid_diff, na.rm = TRUE) # This is DE_k
+
+      # Variance estimate for Fold k:
+      # Sum over alters for each ego-network
+      D_ego_i <- weights_k*(term1 - term2)
+      mean_D_i <- mean(D_ego_i, na.rm = TRUE)
+      sum_sq_diff <- sum((D_ego_i - mean_D_i) ^ 2, na.rm = TRUE)
+      var_k[k] <- sum_sq_diff / n_e_k^2
+    }
+
+    # Aggregation
+    N_total <- sum(n_k_vec)
+    weights <- n_k_vec / N_total
+
+    de_rd_agg <- sum(weights * est_k, na.rm = TRUE)
+    de_rd_var_agg <- sum((weights^2) * var_k, na.rm = TRUE)
+
+    results_list <- data.table::rbindlist(list(
+      results_list,
+      data.table::data.table(
+        pi_param = names(pi_list)[idx],
+        kappa = k_val,
+        de_rd = de_rd_agg,
+        de_rd_var = de_rd_var_agg
+      )
+    ))
+  }
+  return(results_list)
 }
 
 

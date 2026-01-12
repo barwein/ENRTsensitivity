@@ -12,15 +12,16 @@ enrt_pba(
   Z_e,
   F_a,
   ego_id_a,
+  augmented = FALSE,
   reg_model_egos = NULL,
   reg_model_alters = NULL,
   formula_egos = NULL,
   formula_alters = NULL,
-  bootstrap = TRUE,
   B = 1000,
   pz = 0.5,
   probs = c(0.025, 0.975),
   n_cores = 1,
+  n_folds = 2,
   verbose = TRUE,
   prior_func_ie,
   pi_func_ie,
@@ -49,6 +50,8 @@ enrt_pba(
 \item{ego_id_a}{A numeric vector mapping each alter to their ego's index.
 Indices should correspond to the rows in the ego datasets (Y_e, X_e).}
 
+\item{augmented}{Logical whether to use augmented estimators}
+
 \item{reg_model_egos}{A function for the egos' outcome regression model, e.g., `glm`.}
 
 \item{reg_model_alters}{A function for the alters' outcome regression model, e.g., `glm`.}
@@ -57,9 +60,6 @@ Indices should correspond to the rows in the ego datasets (Y_e, X_e).}
 
 \item{formula_alters}{A formula for the alters' regression model.}
 
-\item{bootstrap}{A logical. If `TRUE` (default), uses the 2D Monte Carlo
-(bootstrapping) method. If `FALSE`, uses the normal approximation method.}
-
 \item{B}{An integer specifying the number of Monte Carlo iterations.}
 
 \item{pz}{The known probability of an ego being assigned to treatment, Pr(Z=1).}
@@ -67,6 +67,8 @@ Indices should correspond to the rows in the ego datasets (Y_e, X_e).}
 \item{probs}{A numeric vector (length=`2`) of probabilities for quantiles.}
 
 \item{n_cores}{Number of cores for parallel execution.}
+
+\item{n_folds}{An integer specifying the number of folds for cross-fitting.}
 
 \item{verbose}{A logical indicating whether to print progress messages.}
 
@@ -105,19 +107,12 @@ efficiently generate distributions for two types of uncertainty:
 2.  **Total Uncertainty:** Reflects both sampling and sensitivity
     parameter uncertainty.
 
-Sampling uncertainty is incorporated in one of two ways, controlled by the
-`bootstrap` argument:
 
-* **`bootstrap = TRUE` (default):** Uses a 2D Monte Carlo approach. In each
-    iteration, it draws a non-parametric bootstrap sample (resampling
-    ego-networks) *and* a sample from the sensitivity parameter priors.
-
-* **`bootstrap = FALSE`:** Uses a Normal Approximation method. In each
+PBA uses a Normal approximation method. In each
     iteration, it draws a sample from the sensitivity parameter priors,
     calculates the bias-corrected point estimate and its empirical variance
     on the *full dataset*, and then draws from the resulting normal
-    approximation `N(estimate, variance)` to represent total uncertainty. This
-    is computationally faster.
+    approximation `N(estimate, variance)` to represent total uncertainty.
 }
 \examples{
 \dontrun{
@@ -130,13 +125,13 @@ pz <- 0.5
 # (Egos)
 X_e <- matrix(rnorm(n_e * 2), n_e, 2, dimnames = list(NULL, c("X1", "X2")))
 Z_e <- rbinom(n_e, 1, pz)
-Y_e <- rbinom(n_e, 1, 0.3 + 0.1 * Z_e - 0.2 * X_e[,1])
+Y_e <- rbinom(n_e, 1, plogis(0.3 + 0.1 * Z_e - 0.2 * X_e[,1]))
 
 # (Alters)
 ego_id_a <- sample(1:n_e, n_a, replace = TRUE)
 X_a <- matrix(rnorm(n_a * 2), n_a, 2, dimnames = list(NULL, c("X1", "X2")))
 F_a <- Z_e[ego_id_a] # Observed exposure
-Y_a <- rbinom(n_a, 1, 0.4 - 0.1 * F_a + 0.1 * X_a[,2])
+Y_a <- rbinom(n_a, 1, plogis(0.4 - 0.1 * F_a + 0.1 * X_a[,2]))
 
 # --- 2. Define Prior Distributions and Arguments ---
 
@@ -173,18 +168,18 @@ pi_args_de_list <- list(
 # --- 3. Run the Probabilistic Bias Analysis ---
 
 # Using augmented estimators (logistic regression)
-# and 2D Monte Carlo (bootstrap = TRUE)
 
 pba_results <- enrt_pba(
   Y_e = Y_e, Y_a = Y_a, X_e = X_e, X_a = X_a,
   Z_e = Z_e, F_a = F_a, ego_id_a = ego_id_a,
+  augmented = TRUE,
   reg_model_egos = glm, reg_model_alters = glm,
   formula_egos = Y ~ Z + X1 + X2,
   formula_alters = Y ~ F + X1 + X2,
-  bootstrap = TRUE,
   B = 1000, # Recommend 1e3 to 1e4 for full analysis
   pz = pz,
-  n_cores = 2, # Use 2 cores
+  n_cores = 1, # modify
+  n_folds = 2,
   prior_func_ie = prior_ie_func,
   pi_func_ie = pi_homo,
   pi_args_ie = pi_args_ie_list,

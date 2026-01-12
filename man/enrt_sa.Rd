@@ -12,6 +12,7 @@ enrt_sa(
   Z_e,
   F_a,
   ego_id_a,
+  augmented = FALSE,
   reg_model_egos = NULL,
   reg_model_alters = NULL,
   formula_egos = NULL,
@@ -20,8 +21,6 @@ enrt_sa(
   pi_lists_alter_ego,
   kappa_vec,
   pz = 0.5,
-  bootstrap = FALSE,
-  B = 1000,
   n_folds = 2,
   n_cores = 1,
   alpha = 0.05,
@@ -46,6 +45,8 @@ enrt_sa(
 \item{ego_id_a}{A numeric vector mapping each alter to their ego's index.
 Indices should correspond to the rows in the ego datasets (Y_e, X_e).}
 
+\item{augmented}{Logical whether to use augmented estimators}
+
 \item{reg_model_egos}{A function for the egos' outcome regression model, e.g., `glm`.}
 
 \item{reg_model_alters}{A function for the alters' outcome regression model, e.g., `glm`.}
@@ -62,12 +63,6 @@ Indices should correspond to the rows in the ego datasets (Y_e, X_e).}
 \item{kappa_vec}{A numeric vector of values for the kappa sensitivity parameter.}
 
 \item{pz}{The known probability of an ego being assigned to treatment, Pr(Z=1).}
-
-\item{bootstrap}{A logical value. If `TRUE`, variance is estimated via
-non-parametric bootstrap. If `FALSE` (default), the empirical
-(cluster-robust for IE) variance is used.}
-
-\item{B}{An integer specifying the number of bootstrap iterations (if `bootstrap = TRUE`).}
 
 \item{n_folds}{An integer specifying the number of folds for cross-fitting.}
 
@@ -102,9 +97,10 @@ It calculates bias-corrected point estimates, variance, and confidence
 intervals for the Indirect Effect (IE) and Direct Effect (DE) over a
 user-specified grid of sensitivity parameters.
 
-This is the primary function for GSA. It can use either empirical
-variance estimates (fast) or a non-parametric ego-network bootstrap
-(more robust).
+This is the primary function for GSA.
+When regression formula and models (for egos and alters) are given,
+and n_folds >= 2, the augmented estimators are used.
+Otherwise, the non-augmented are used.
 }
 \examples{
 \dontrun{
@@ -117,13 +113,13 @@ pz <- 0.5
 # (Egos)
 X_e <- matrix(rnorm(n_e * 2), n_e, 2, dimnames = list(NULL, c("X1", "X2")))
 Z_e <- rbinom(n_e, 1, pz)
-Y_e <- rbinom(n_e, 1, 0.3 + 0.1 * Z_e - 0.2 * X_e[,1])
+Y_e <- rbinom(n_e, 1, plogis(0.3 + 0.1 * Z_e - 0.2 * X_e[,1]))
 
 # (Alters)
 ego_id_a <- sample(1:n_e, n_a, replace = TRUE)
 X_a <- matrix(rnorm(n_a * 2), n_a, 2, dimnames = list(NULL, c("X1", "X2")))
 F_a <- Z_e[ego_id_a] # Observed exposure
-Y_a <- rbinom(n_a, 1, 0.4 - 0.1 * F_a + 0.1 * X_a[,2])
+Y_a <- rbinom(n_a, 1, plogis(0.4 - 0.1 * F_a + 0.1 * X_a[,2]))
 
 # --- 2. Define Sensitivity Parameter Grids ---
 
@@ -164,11 +160,11 @@ kappa_grid <- seq(1, 3, by = 0.5)
 # --- 4. Run the Grid Sensitivity Analysis ---
 
 # Using augmented estimators (logistic regression)
-# and empirical variance (bootstrap = FALSE)
 
 sa_results <- enrt_sa(
   Y_e = Y_e, Y_a = Y_a, X_e = X_e, X_a = X_a,
   Z_e = Z_e, F_a = F_a, ego_id_a = ego_id_a,
+  augmented = TRUE,
   reg_model_egos = glm, reg_model_alters = glm,
   formula_egos = Y ~ Z + X1 + X2,
   formula_alters = Y ~ F + X1 + X2,
@@ -176,8 +172,8 @@ sa_results <- enrt_sa(
   pi_lists_alter_ego = pi_lists_ae,
   kappa_vec = kappa_grid,
   pz = pz,
-  bootstrap = FALSE,
   n_cores = 1,
+  n_folds = 2,
   family = binomial(link = "logit") # Passed to glm()
 )
 

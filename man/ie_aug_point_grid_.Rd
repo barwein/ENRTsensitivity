@@ -13,7 +13,7 @@ ie_aug_point_grid_(
   pz,
   ego_id_a = NULL,
   n_e = NULL,
-  estimate_var = FALSE
+  folds_ids_a = NULL
 )
 }
 \arguments{
@@ -33,7 +33,7 @@ ie_aug_point_grid_(
 
 \item{n_e}{Total number of egos.}
 
-\item{estimate_var}{Logical. If TRUE, compute cluster-robust variance.}
+\item{folds_ids_a}{Vector indicating fold assignments for alters.}
 }
 \value{
 A data.table with pi_param, ie_rd, ie_rd_var

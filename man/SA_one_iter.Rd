@@ -12,16 +12,16 @@ SA_one_iter(
   Z_e,
   F_a,
   ego_id_a,
-  reg_model_egos,
-  reg_model_alters,
-  formula_egos,
-  formula_alters,
+  augmented = FALSE,
+  reg_model_egos = NULL,
+  reg_model_alters = NULL,
+  formula_egos = NULL,
+  formula_alters = NULL,
   pi_list_ego_ego,
   pi_list_alter_ego,
   kappa_vec,
   pz,
   n_folds = 2,
-  estimate_var = FALSE,
   ...
 )
 }
@@ -40,6 +40,8 @@ SA_one_iter(
 
 \item{ego_id_a}{A numeric vector mapping each alter to their ego's index
 (1 to n_e). Required for IE variance.}
+
+\item{augmented}{Logical whether to use augmented estimators}
 
 \item{reg_model_egos}{A function for the egos' outcome regression model.}
 
@@ -60,9 +62,6 @@ probabilities (`pi_i^a`) for alters.}
 \item{pz}{The known probability of an ego being assigned to treatment, Pr(Z=1).}
 
 \item{n_folds}{The number of folds for cross-fitting outcome models.}
-
-\item{estimate_var}{Logical. If TRUE, compute and return empirical variance
-estimates. If FALSE, variance columns will be NA.}
 
 \item{...}{Additional arguments passed to the regression model functions.}
 }

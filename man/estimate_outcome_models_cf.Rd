@@ -58,6 +58,8 @@ A list containing four numeric vectors of cross-fitted predictions:
   \item{mu_a_0}{Predictions for alters with F=0 (length n_a).}
   \item{mu_e_1}{Predictions for egos with Z=1 (length n_e).}
   \item{mu_e_0}{Predictions for egos with Z=0 (length n_e).}
+  \item{folds_ids_e}{A numeric vector indicating the fold assignment for each ego (length n_e).}
+  \item{folds_ids_a}{A numeric vector indicating the fold assignment for each alter (length n_a).}
 }
 }
 \description{
