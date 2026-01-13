@@ -190,8 +190,16 @@ enrt_sa <- function(Y_e,
   z_val <- qnorm(1 - alpha / 2)
 
   # --- 2. Define Naive (Null) Case ---
-  pi_list_null_ee <- list('0' = 0)
-  pi_list_null_ae <- list('0' = pz) # Naive case for alters is pi = pz
+  n_e <- length(Y_e)
+  n_a <- length(Y_a)
+  pi_list_null_ee <- list('0' = list(rho = matrix(0, n_e, n_e),
+                                     pi = 0))
+  pi_list_null_ae <- list('0' = list(
+    rho = matrix(0, n_e, n_a),
+    pi = pz
+  )) # Naive case for alters is pi = pz
+  # pi_list_null_ee <- list('0' = 0)
+  # pi_list_null_ae <- list('0' = pz) # Naive case for alters is pi = pz
 
   # Combine naive case with other specifications
   spec_names_to_run <- c("Naive", names(pi_lists_ego_ego))

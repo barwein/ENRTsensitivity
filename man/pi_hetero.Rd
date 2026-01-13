@@ -12,8 +12,7 @@ pi_hetero(
   dist = "norm",
   ego_index = NULL,
   pz = 0.5,
-  p = 1,
-  return_rho_ij = FALSE
+  p = 1
 )
 }
 \arguments{
@@ -42,10 +41,6 @@ This is used to exclude distances to an alter's *own* ego.}
 
 \item{p}{The power for the Lp norm (`dist = "norm"`), e.g., `p=2` for
 Euclidean (default) or `p=1` for Manhattan.}
-
-\item{return_rho_ij}{Logical. If `TRUE` and `m_vec` is used, returns a
-list containing both the 'pi' vectors and the 'rho' (edge probability)
-matrices.}
 }
 \value{
 If `m_vec` is `NULL`: A named list where each element is a *vector*

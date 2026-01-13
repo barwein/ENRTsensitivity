@@ -55,7 +55,8 @@ ie_aug_point_grid_ <- function(Y_a,
 
   results_list <- list()
   for (i in seq_along(pi_list)) {
-    pi_vec <- pi_list[[i]]
+    # pi_vec <- pi_list[[i]]
+    pi_vec <- pi_list[[i]]$pi
 
     # Validate pi_vec
     if (any(pi_vec >= 1)) {
@@ -193,7 +194,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
   if (n_e != length(Z_e)) {
     stop("Y_e and Z_e must have the same length (n_e).")
   }
-  if (all(lapply(pi_list, function(p) { all(p >= 0) }) == FALSE)) {
+  # if (all(lapply(pi_list, function(p) { all(p >= 0) }) == FALSE)) {
+  if (all(lapply(pi_list, function(p) { all(p$pi >= 0) }) == FALSE)) {
     stop("Some pi_vec contains negative values.")
   }
 
@@ -205,7 +207,9 @@ de_grid_multi_pi_kappa <- function(Y_e,
   for (r in 1:nrow(grid_params)){
     idx <- grid_params$pi_idx[r]
     k_val <- grid_params$kappa[r]
-    pi_vec <- pi_list[[idx]]
+    # pi_vec <- pi_list[[idx]]
+    pi_vec <- pi_list[[idx]]$pi
+    rho_mat <- pi_list[[idx]]$rho
 
     est_k <- numeric(n_folds)
     var_k <- numeric(n_folds)
@@ -243,8 +247,38 @@ de_grid_multi_pi_kappa <- function(Y_e,
       # Sum over alters for each ego-network
       D_ego_i <- weights_k*(term1 - term2)
       mean_D_i <- mean(D_ego_i, na.rm = TRUE)
-      sum_sq_diff <- sum((D_ego_i - mean_D_i) ^ 2, na.rm = TRUE)
-      var_k[k] <- sum_sq_diff / n_e_k^2
+      v_hat_k <- (D_ego_i - mean_D_i)^2
+      # sum_sq_diff <- sum((D_ego_i - mean_D_i) ^ 2, na.rm = TRUE)
+      sum_sq_diff <- sum(v_hat_k, na.rm = TRUE)
+      var_neyman <- sum_sq_diff / (n_e_k^2)
+      # var_k[k] <- sum_sq_diff / n_e_k^2
+
+     # Compute VIF correction term using rho matrix
+    if (!is.null(rho_mat) && is.matrix(rho_mat)) {
+
+        # Subset rho for units in this fold
+        # Note: We must subset both rows and cols to get the sub-graph of egos in this fold
+        rho_k_sub <- rho_mat[idx_e, idx_e]
+
+        # Calculate S matrix: Expected number of shared neighbors
+        # S_ij = sum_k rho_ik * rho_jk
+        S_mat <- rho_k_sub %*% t(rho_k_sub)
+
+        # We only sum over i != j. Set diagonal to 0.
+        # diag(S_mat) <- 0
+
+        # Conservative bound term: S_ij * sqrt(v_i * v_j)
+        sqrt_v <- sqrt(v_hat_k)
+
+        # Calculate quadratic form: sqrt_v' * S * sqrt_v
+        # This sums S_ij * sqrt(v_i) * sqrt(v_j) for all i, j
+        cov_sum <- as.numeric(t(sqrt_v) %*% S_mat %*% sqrt_v)
+
+        # Apply scaling factor: pz(1-pz) / N^2
+        correction <- (pz * (1 - pz) / n_e_k^2) * cov_sum
+      }
+
+      var_k[k] <- var_neyman + correction
     }
 
     # Aggregation

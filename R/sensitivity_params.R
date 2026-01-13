@@ -96,9 +96,14 @@ pi_homo <- function(rho_vec = NULL,
   pi_list <- lapply(rho_ij_vec, function(rho_ij){
     p_not_expos <- (1 - pz*rho_ij)^(n_e-1)
     if (type == "ego"){
-      1 - p_not_expos
+      pi_prob <- 1 - p_not_expos
+      rho_mat <- matrix(rho_ij, nrow = n_e, ncol = n_e)
+      diag(rho_mat) <- 0
+      return(list(pi = pi_prob, rho = rho_mat))
     } else {
-      pz + (1 - pz)*(1 - p_not_expos)
+      pi_prob <- pz + (1 - pz)*(1 - p_not_expos)
+      rho_mat <- matrix(rho_ij, nrow = n_e, ncol = n_a)
+      return(list(pi = pi_prob, rho = rho_mat))
     }
   })
   if (!is.null(rho_vec)){
@@ -143,9 +148,6 @@ pi_homo <- function(rho_vec = NULL,
 #' @param pz The known probability of an ego being assigned to treatment, \eqn{Pr(Z=1)}.
 #' @param p The power for the Lp norm (`dist = "norm"`), e.g., `p=2` for
 #'   Euclidean (default) or `p=1` for Manhattan.
-#' @param return_rho_ij Logical. If `TRUE` and `m_vec` is used, returns a
-#'   list containing both the 'pi' vectors and the 'rho' (edge probability)
-#'   matrices.
 #'
 #' @return
 #' If `m_vec` is `NULL`: A named list where each element is a *vector*
@@ -205,8 +207,7 @@ pi_hetero <- function(X_e,
                       dist = "norm",
                       ego_index = NULL,
                       pz = 0.5,
-                      p = 1,
-                      return_rho_ij = FALSE){
+                      p = 1){
 
   type_ <- ifelse(is.null(X_a), "ego", "alter")
 
@@ -239,9 +240,12 @@ pi_hetero <- function(X_e,
       P <- wp$prob
       p_exposed <- 1 - apply(pz*P, 2, function(x) prod(1 - x))
       if (type_ == "ego"){
-        p_exposed
+        return(list(rho = P, pi = p_exposed))
+        # p_exposed
       } else {
-        pz + (1 - pz)*p_exposed
+        # pz + (1 - pz)*p_exposed
+        return(list(rho = P,
+                    pi = pz + (1 - pz)*p_exposed))
       }
     })
     # names(pi_by_gamma) <- paste0("gamma=", gamma)
@@ -274,17 +278,20 @@ pi_hetero <- function(X_e,
     pi_by_m <- lapply(rho_by_m, function(rho_ij){
       p_exposed <- 1 - apply(pz*rho_ij, 2, function(x) prod(1 - x))
       if (type_ == "ego"){
-        p_exposed
+        return(list(rho = rho_ij, pi = p_exposed))
+        # p_exposed
       } else {
-        pz + (1 - pz)*p_exposed
+        return(list(rho = rho_ij,
+                    pi = pz + (1 - pz)*p_exposed))
+        # pz + (1 - pz)*p_exposed
       }
     })
-    if (return_rho_ij){
-      return(list(pi = pi_by_m, rho = rho_by_m))
-    } else{
-      return(pi_by_m)
-    }
+    # if (return_rho_ij){
+    #   return(list(pi = pi_by_m, rho = rho_by_m))
+    # } else{
+    #   return(pi_by_m)
+    # }
+    return(pi_by_m)
   }
 }
-
 
