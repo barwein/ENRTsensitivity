@@ -137,6 +137,7 @@ pi_homo <- function(rho_vec = NULL,
 #' @param m_vec A numeric vector of the expected number of missing edges, \eqn{m^e} or
 #'   \eqn{m^a}. Used for "Example 4". If `NULL` (default),
 #'   the function uses the "Example 3" model.
+#' @param rho_base A scalar baseline probability of edge formation in Example 3.
 #' @param gamma A numeric vector of sensitivity parameters (\eqn{\gamma^e} or \eqn{\gamma^a})
 #'   that control the influence of covariate similarity.
 #'   If `m_vec` is provided, `gamma` must be a single scalar.
@@ -175,6 +176,7 @@ pi_homo <- function(rho_vec = NULL,
 #'
 #' pi_e_list_hetero <- pi_hetero(X_e = X_e,
 #'                               gamma = c(0.5, 1.0, 2.0),
+#'                               rho_base = 0.01,
 #'                               dist = "norm",
 #'                               p = 2,
 #'                               pz = pz)
@@ -203,6 +205,7 @@ pi_homo <- function(rho_vec = NULL,
 pi_hetero <- function(X_e,
                       X_a = NULL,
                       m_vec = NULL,
+                      rho_base = NULL,
                       gamma = -1,
                       dist = "norm",
                       ego_index = NULL,
@@ -221,6 +224,12 @@ pi_hetero <- function(X_e,
 
   if (!is.null(m_vec) && any(m_vec < 0)){
     stop("All values in 'm_vec' must be non-negative.")
+  }
+
+
+  if (is.null(m_vec) && is.null(rho_base)){
+    message("Settings 'rho_base' to 0.01 for all pairs by default.")
+    rho_base <- 0.01
   }
 
   # Distance matrix

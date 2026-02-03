@@ -124,13 +124,43 @@ get_dist_matrix <- function(X_e,
 
 hetero_pi_weight_from_dist_ <- function(D,
                                         gamma = -1,
+                                        rho_base,
                                         ego_index = NULL
                                         ){
   # D: n_e x n_a (or n_e x n_e) distances matrix
+  # rho_base: baseline probability of edge formation in hetero prob case (example 3)
   # gamma: scalar "temperature" (negative for distances; positive for inner prod)
   # If self_zero=TRUE and D is square, force P[ii] = 0 (excluded in the softmax)
 
+  if (is.null(rho_base)){
+    rho_base <- 0.01
+  }
+
   L <- gamma * D
+
+  # Hetero probs (Example 3)
+  # compute average L (measures) values (for ego-ego or alter-ego case)
+  L_sum <- ifelse(is.null(ego_index),
+                  sum(L[lower.tri(L)], na.rm=TRUE), # ego-ego case
+                  sum(L, na.rm = TRUE) # alter-ego case
+  )
+
+  L_denom_for_average <- ifelse(is.null(ego_index),
+                                 sum(!is.na(L[lower.tri(L)])), # ego-ego case
+                                 sum(!is.na(L))) # alter-ego case
+
+  L_average <- L_sum / L_denom_for_average
+
+  # Get probs (gamma of the paper is -gamma here)
+  rho_probs_mat <- plogis(qlogis(rho_base) + (L - L_average))
+  # Save relevant probs depending on ego-ego or alter-ego case
+  rho_probs <- if (is.null(ego_index)){
+      rho_probs_mat[lower.tri(rho_probs_mat)] # ego-ego case
+  }else{
+      rho_probs_mat # alter-ego case
+    }
+
+ # Hetero number of missing edges -- weight matrix
   L[is.na(L)] <- -Inf # exclude missing distances
   # For ego-ego distance, make the diagonal -inf -> prob = 0
   if (!is.null(ego_index)){
@@ -147,14 +177,14 @@ hetero_pi_weight_from_dist_ <- function(D,
   # Probs will be computed via Softmax by columns of W
   # We use LogSumExp trick for numerical stability
   # P_ij = exp(gamma*D_ij - LSE(D_j))
-  lse <- .col_logsumexp(L)
-  log_prob <- sweep(L, 2, lse, "-") # log-softmax by column
-  log_prob[, is.infinite(lse)] <- -Inf # if all -Inf in col, set all probs to 0
-
-  prob <- exp(log_prob)
-  prob[!is.finite(prob)] <- 0
+  # lse <- .col_logsumexp(L)
+  # log_prob <- sweep(L, 2, lse, "-") # log-softmax by column
+  # log_prob[, is.infinite(lse)] <- -Inf # if all -Inf in col, set all probs to 0
+  #
+  # prob <- exp(log_prob)
+  # prob[!is.finite(prob)] <- 0
 
   return(list(weights = weights,
-              prob = prob))
+              prob = rho_probs))
 }
 
