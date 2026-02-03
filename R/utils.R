@@ -153,12 +153,7 @@ hetero_pi_weight_from_dist_ <- function(D,
 
   # Get probs (gamma of the paper is -gamma here)
   rho_probs_mat <- plogis(qlogis(rho_base) + (L - L_average))
-  # Save relevant probs depending on ego-ego or alter-ego case
-  rho_probs <- if (is.null(ego_index)){
-      rho_probs_mat[lower.tri(rho_probs_mat)] # ego-ego case
-  }else{
-      rho_probs_mat # alter-ego case
-    }
+
 
  # Hetero number of missing edges -- weight matrix
   L[is.na(L)] <- -Inf # exclude missing distances
@@ -185,6 +180,6 @@ hetero_pi_weight_from_dist_ <- function(D,
   # prob[!is.finite(prob)] <- 0
 
   return(list(weights = weights,
-              prob = rho_probs))
+              prob = rho_probs_mat))
 }
 

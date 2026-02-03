@@ -8,6 +8,7 @@ pi_hetero(
   X_e,
   X_a = NULL,
   m_vec = NULL,
+  rho_base = NULL,
   gamma = -1,
   dist = "norm",
   ego_index = NULL,
@@ -25,6 +26,8 @@ If provided, it calculates alter-ego probabilities (\eqn{\pi_i^a}).}
 \item{m_vec}{A numeric vector of the expected number of missing edges, \eqn{m^e} or
 \eqn{m^a}. Used for "Example 4". If `NULL` (default),
 the function uses the "Example 3" model.}
+
+\item{rho_base}{A scalar baseline probability of edge formation in Example 3.}
 
 \item{gamma}{A numeric vector of sensitivity parameters (\eqn{\gamma^e} or \eqn{\gamma^a})
 that control the influence of covariate similarity.
@@ -73,6 +76,7 @@ ego_id_a <- sample(1:n_e, n_a, replace = TRUE) # Map alters to egos
 
 pi_e_list_hetero <- pi_hetero(X_e = X_e,
                               gamma = c(0.5, 1.0, 2.0),
+                              rho_base = 0.01,
                               dist = "norm",
                               p = 2,
                               pz = pz)
