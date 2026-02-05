@@ -3,7 +3,7 @@
 
 [![](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.md) [![](https://img.shields.io/badge/status-dev-orange.svg)]()
 
-R package for **S**ensitivity **A**nalysis for **C**ontamination in **E**gocentric-**N**etwork **R**andomized **T**rials.
+R package for **S**ensitivity **A**nalysis for **C**ontamination in **E**gocentric-**N**etwork **R**andomized **T**rials  with **I**nterference.
 
 This package implements the sensitivity analysis (SA) framework developed in Weinstein & Nevo (2025).
 
