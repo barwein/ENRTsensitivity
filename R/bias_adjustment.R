@@ -237,15 +237,19 @@ de_grid_multi_pi_kappa <- function(Y_e,
       term1 <- (Y_e_k - mu_e_1_k) * Z_e_k / pz
       term2 <- (Y_e_k - mu_e_0_k) * (1 - Z_e_k) / (1 - pz)
       resid_diff <- mu_e_1_k - mu_e_0_k + term1 - term2
-      weights_k <-  1 / (1 + pi_vec_k * (k_val - 1))
-      weighted_resid_diff <- weights_k * resid_diff
+      mean_pi_k <- mean(pi_vec_k, na.rm = TRUE)
+      # weights_k <-  1 / (1 + pi_vec_k * (k_val - 1))
+      weights_k <-  1 / (1 + mean_pi_k * (k_val - 1))
+      # weighted_resid_diff <- weights_k * resid_diff
 
       # Point estimates for fold k:
-      est_k[k] <- mean(weighted_resid_diff, na.rm = TRUE) # This is DE_k
+      # est_k[k] <- mean(weighted_resid_diff, na.rm = TRUE) # This is DE_k
+      est_k[k] <- weights_k*mean(resid_diff, na.rm = TRUE) # This is DE_k
 
       # Variance estimate for Fold k:
       # Sum over alters for each ego-network
-      D_ego_i <- weights_k*(term1 - term2)
+      # D_ego_i <- weights_k*(term1 - term2)
+      D_ego_i <- term1 - term2
       mean_D_i <- mean(D_ego_i, na.rm = TRUE)
       v_hat_k <- (D_ego_i - mean_D_i)^2
       # sum_sq_diff <- sum((D_ego_i - mean_D_i) ^ 2, na.rm = TRUE)
@@ -278,7 +282,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
         correction <- (pz * (1 - pz) / n_e_k^2) * cov_sum
       }
 
-      var_k[k] <- var_neyman + correction
+      # var_k[k] <- var_neyman + correction
+      var_k[k] <- (var_neyman + correction)*(weights_k^2)
     }
 
     # Aggregation
