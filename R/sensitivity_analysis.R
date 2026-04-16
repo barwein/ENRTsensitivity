@@ -315,7 +315,7 @@ enrt_sa <- function(Y_e,
       naive_de_rd <- null_results_de # This is now the single (0,0) point
       subtitle_de_rd <-
         TeX(paste0(
-        sprintf("Naive Estimate with $\\pi=0, \\; \\kappa=1$ [%.0f%% CI]: %.3f [%.3f, %.3f]",
+        sprintf("Naive Estimate with $\\pi^e=0, \\kappa=1$ [%.0f%% CI]: %.3f [%.3f, %.3f]",
                 (1-alpha)*100, naive_de_rd$de_rd, naive_de_rd$ci_low, naive_de_rd$ci_high)
       ))
 
