@@ -26,5 +26,6 @@ utils::globalVariables(c(
 #' @importFrom stats runif
 #' @importFrom stats var
 #' @importFrom parallel mclapply
+#' @importfrom latex2exp TeX
 ## usethis namespace: end
 NULL
