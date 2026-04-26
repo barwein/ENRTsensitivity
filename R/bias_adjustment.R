@@ -242,7 +242,7 @@ de_grid_multi_pi_kappa <- function(Y_e,
       # weights_k <-  1 / (1 + pi_vec_k * (k_val - 1))
       # weights_k <-  1 / (1 + mean_pi_k * (k_val - 1))
       u_k <- n_e_k*(1 + mean_pi_k * (k_val - 1)) # effective sample size adjustment
-      u_k_vec[k] <- u_k # store u_k value for later weighting of variance
+      u_k_vec[k] <- u_k # store u_k value for later weighting of combined estimates
       # weighted_resid_diff <- weights_k * resid_diff
 
       # Point estimates for fold k:

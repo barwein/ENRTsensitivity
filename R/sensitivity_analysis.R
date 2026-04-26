@@ -210,14 +210,44 @@ enrt_sa <- function(Y_e,
   names(pi_ae_to_run) <- spec_names_to_run
 
 
-  # --- 3. Run Sensitivity Analyses ---
+  # --- 3. Get predicted outcomes ---
+
+  # Estimate outcome models using cross-fitting
+  if (augmented){
+    outcomes_res <- estimate_outcome_models_cf(
+      Y_e = Y_e,
+      Y_a = Y_a,
+      X_e = X_e,
+      X_a = X_a,
+      Z_e = Z_e,
+      F_a = F_a,
+      ego_id_a = ego_id_a,
+      reg_model_egos = reg_model_egos,
+      reg_model_alters = reg_model_alters,
+      formula_egos = formula_egos,
+      formula_alters = formula_alters,
+      n_folds = n_folds,
+      ...
+      # family = binomial(link = "logit") # Passed to glm()
+    )
+  } else{ # Non-augmented case (no cross-fitting)
+    outcomes_res <- list(
+      mu_a_1 = rep(0, n_a), mu_a_0 = rep(0, n_a),
+      mu_e_1 = rep(0, n_e), mu_e_0 = rep(0, n_e),
+      folds_ids_e = rep(1, n_e), # Single fold containing all indices
+      folds_ids_a = rep(1, n_a)
+    )
+  }
+
+
+  # --- 4. Run Sensitivity Analyses ---
 
   # Define the core function to be called by mapply
   run_spec_func <- function(pi_ee, pi_ae, spec_name) {
     if(verbose) message(paste("Running specification:", spec_name))
 
-    # Use full kappa_vec for SA specs, but *only c(0)* for Naive DE spec
-    k_vec_to_use <- if (spec_name == "Naive") c(0) else kappa_vec
+    # Use full kappa_vec for SA specs, but *only c(1)* for Naive DE spec
+    k_vec_to_use <- if (spec_name == "Naive") c(1) else kappa_vec
     # Call SA_one_iter directly and get empirical variance
     SA_one_iter(
       Y_e = Y_e,
@@ -227,11 +257,12 @@ enrt_sa <- function(Y_e,
       Z_e = Z_e,
       F_a = F_a,
       ego_id_a = ego_id_a,
-      augmented = augmented,
-      reg_model_egos = reg_model_egos,
-      reg_model_alters = reg_model_alters,
-      formula_egos = formula_egos,
-      formula_alters = formula_alters,
+      mu_a_1 = outcomes_res$mu_a_1,
+      mu_a_0 = outcomes_res$mu_a_0,
+      mu_e_1 = outcomes_res$mu_e_1,
+      mu_e_0 = outcomes_res$mu_e_0,
+      folds_ids_a = outcomes_res$folds_ids_a,
+      folds_ids_e = outcomes_res$folds_ids_e,
       pi_list_ego_ego = pi_ee,
       pi_list_alter_ego = pi_ae,
       kappa_vec = k_vec_to_use, # Use correct k_vec
@@ -250,7 +281,7 @@ enrt_sa <- function(Y_e,
     SIMPLIFY = FALSE
   )
 
-  # --- 4. Aggregate Results and Calculate CIs ---
+  # --- 5. Aggregate Results and Calculate CIs ---
   # Aggregate IE
   ie_results_dt <- rbindlist(lapply(all_results_list, `[[`, "IE_corrected"), idcol = "spec")
   ie_results_dt[, var_to_use := ie_rd_var]
@@ -281,7 +312,7 @@ enrt_sa <- function(Y_e,
   # --- Initialize plot variables to NULL ---
   ie_rd_plot <- de_rd_plot <- NULL
 
-  # --- 5. Generate Plots (if requested) ---
+  # --- 6. Generate Plots (if requested) ---
   if (plot) {
     # --- IE Plot (RD only) ---
     if (nrow(sa_results_ie) > 0) {
@@ -334,7 +365,7 @@ enrt_sa <- function(Y_e,
     }
   }
 
-  # --- 6. Return list of results ---
+  # --- 7. Return list of results ---
   return(invisible(list(
     null_results = null_results,
     sa_results = sa_results,

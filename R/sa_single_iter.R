@@ -46,11 +46,12 @@ SA_one_iter <- function(Y_e,
                         Z_e,
                         F_a,
                         ego_id_a,
-                        augmented = FALSE,
-                        reg_model_egos = NULL,
-                        reg_model_alters = NULL,
-                        formula_egos = NULL,
-                        formula_alters = NULL,
+                        mu_a_1,
+                        mu_a_0,
+                        mu_e_1,
+                        mu_e_0,
+                        folds_ids_a,
+                        folds_ids_e,
                         pi_list_ego_ego,
                         pi_list_alter_ego,
                         kappa_vec,
@@ -74,60 +75,60 @@ SA_one_iter <- function(Y_e,
   if (pz <= 0 | pz >= 1) stop("Invalid treatment probability 'pz' input.")
 
   n_e <- length(Y_e)
+  #
+  # # 1. Estimate outcome models using cross-fitting
+  # if (augmented){
+  #   outcomes_res <- estimate_outcome_models_cf(
+  #     Y_e = Y_e,
+  #     Y_a = Y_a,
+  #     X_e = X_e,
+  #     X_a = X_a,
+  #     Z_e = Z_e,
+  #     F_a = F_a,
+  #     ego_id_a = ego_id_a,
+  #     reg_model_egos = reg_model_egos,
+  #     reg_model_alters = reg_model_alters,
+  #     formula_egos = formula_egos,
+  #     formula_alters = formula_alters,
+  #     n_folds = n_folds,
+  #     ...
+  #     # family = binomial(link = "logit") # Passed to glm()
+  #
+  #   )
+  # } else{
+  #   outcomes_res <- list(
+  #     mu_a_1 = rep(0, n_a), mu_a_0 = rep(0, n_a),
+  #     mu_e_1 = rep(0, n_e), mu_e_0 = rep(0, n_e),
+  #     folds_ids_e = rep(1, n_e), # Single fold containing all indices
+  #     folds_ids_a = rep(1, n_a)
+  #   )
+  # }
 
-  # 1. Estimate outcome models using cross-fitting
-  if (augmented){
-    outcomes_res <- estimate_outcome_models_cf(
-      Y_e = Y_e,
-      Y_a = Y_a,
-      X_e = X_e,
-      X_a = X_a,
-      Z_e = Z_e,
-      F_a = F_a,
-      ego_id_a = ego_id_a,
-      reg_model_egos = reg_model_egos,
-      reg_model_alters = reg_model_alters,
-      formula_egos = formula_egos,
-      formula_alters = formula_alters,
-      n_folds = n_folds,
-      # ...
-      family = binomial(link = "logit") # Passed to glm()
-
-    )
-  } else{
-    outcomes_res <- list(
-      mu_a_1 = rep(0, n_a), mu_a_0 = rep(0, n_a),
-      mu_e_1 = rep(0, n_e), mu_e_0 = rep(0, n_e),
-      folds_ids_e = rep(1, n_e), # Single fold containing all indices
-      folds_ids_a = rep(1, n_a)
-    )
-  }
-
-  # 2. Bias-corrected IE estimates
+  # 1. Bias-corrected IE estimates
   # 'IE_corrected' is data.table with columns: pi_param, ie_rd, ie_rd_var
   IE_corrected <- ie_aug_point_grid_(
     Y_a = Y_a,
     F_a = F_a,
-    mu_a_1 = outcomes_res$mu_a_1,
-    mu_a_0 = outcomes_res$mu_a_0,
+    mu_a_1 = mu_a_1,
+    mu_a_0 = mu_a_0,
     pi_list = pi_list_alter_ego,
     pz = pz,
     ego_id_a = ego_id_a,
     n_e = n_e,
-    folds_ids_a = outcomes_res$folds_ids_a
+    folds_ids_a = folds_ids_a
     )
 
-  # 3. Bias-corrected DE estimates
+  # 2. Bias-corrected DE estimates
   # 'DE_corrected' is data.table with columns: pi_param, kappa, de_rd, de_rd_var
   DE_corrected <- de_grid_multi_pi_kappa(
     Y_e = Y_e,
     Z_e = Z_e,
-    mu_e_1 = outcomes_res$mu_e_1,
-    mu_e_0 = outcomes_res$mu_e_0,
+    mu_e_1 = mu_e_1,
+    mu_e_0 = mu_e_0,
     pi_list = pi_list_ego_ego,
     kappa_vec = kappa_vec,
     pz = pz,
-    folds_ids_e = outcomes_res$folds_ids_e
+    folds_ids_e = folds_ids_e
   )
 
   return(list(

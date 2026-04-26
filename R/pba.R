@@ -224,6 +224,35 @@ enrt_pba <- function(Y_e,
   }
 
 
+  # --- Estimate the outcome models once ---
+  # Estimate outcome models using cross-fitting
+  if (augmented){
+    outcomes_res <- estimate_outcome_models_cf(
+      Y_e = Y_e,
+      Y_a = Y_a,
+      X_e = X_e,
+      X_a = X_a,
+      Z_e = Z_e,
+      F_a = F_a,
+      ego_id_a = ego_id_a,
+      reg_model_egos = reg_model_egos,
+      reg_model_alters = reg_model_alters,
+      formula_egos = formula_egos,
+      formula_alters = formula_alters,
+      n_folds = n_folds,
+      ...
+      # family = binomial(link = "logit") # Passed to glm()
+    )
+  } else{ # Non-augmented case (no cross-fitting)
+    outcomes_res <- list(
+      mu_a_1 = rep(0, n_a), mu_a_0 = rep(0, n_a),
+      mu_e_1 = rep(0, n_e), mu_e_0 = rep(0, n_e),
+      folds_ids_e = rep(1, n_e), # Single fold containing all indices
+      folds_ids_a = rep(1, n_a)
+    )
+  }
+
+
 
   # --- Iteration Function  ---
   iteration_function <- function(iter) {
@@ -248,11 +277,12 @@ enrt_pba <- function(Y_e,
         X_e = X_e, X_a = X_a,
         Z_e = Z_e, F_a = F_a,
         ego_id_a = ego_id_a,
-        augmented = augmented,
-        reg_model_egos = reg_model_egos,
-        reg_model_alters = reg_model_alters,
-        formula_egos = formula_egos,
-        formula_alters = formula_alters,
+        mu_a_1 = outcomes_res$mu_a_1,
+        mu_a_0 = outcomes_res$mu_a_0,
+        mu_e_1 = outcomes_res$mu_e_1,
+        mu_e_0 = outcomes_res$mu_e_0,
+        folds_ids_a = outcomes_res$folds_ids_a,
+        folds_ids_e = outcomes_res$folds_ids_e,
         pi_list_ego_ego = pi_list_ego_full,
         pi_list_alter_ego = pi_list_alter_full,
         kappa_vec = s_de$kappa,
