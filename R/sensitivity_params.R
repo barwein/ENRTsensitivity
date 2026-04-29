@@ -291,7 +291,7 @@ pi_hetero <- function(X_e,
         # p_exposed
       } else {
         pi_e <- pz + (1 - pz)*p_exposed
-        pi_e[pi_e > 1] <- 1 # Cap at 1
+        pi_e[pi_e >= 1] <- 1 - 1e-5 # Cap at 1 minus eps
         pi_e[pi_e < 0] <- 0 # Floor at 0
         return(list(rho = rho_ij,
                     pi = pi_e))
