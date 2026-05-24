@@ -178,7 +178,6 @@ de_grid_multi_pi_kappa <- function(Y_e,
   if (is.null(folds_ids_e)){
     folds_ids_e <- rep(1, n_e)
   }
-  fold_levels <- sort(unique(folds_ids_e))
   n_folds <- length(unique(folds_ids_e))
 
   if(is.null(mu_e_1) || is.null(mu_e_0)) {
@@ -212,10 +211,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
     rho_mat <- pi_list[[idx]]$rho # n_e x n_e, diag = 0
 
     est_k <- numeric(n_folds)
-    # var_k <- numeric(n_folds)
-    var_neyman_k <- numeric(n_folds) # neyman var in split k
+    var_k <- numeric(n_folds)
     u_k_vec <- numeric(n_folds)
-    v_hat_global <- numeric(n_e) # v_i stored in original ego index
 
     # Run over the folds
     for (k in 1:n_folds) {
@@ -251,30 +248,28 @@ de_grid_multi_pi_kappa <- function(Y_e,
       D_ego_i <- term1 - term2
       mean_D_i <- sum(D_ego_i, na.rm = TRUE) / u_k
       v_hat_k <- (D_ego_i - mean_D_i)^2
-      var_neyman_k[k] <- sum(v_hat_k, na.rm = TRUE) / (u_k^2)
+      var_neyman_k <- sum(v_hat_k, na.rm = TRUE) / (u_k^2)
 
-      v_hat_global[idx_e] <- v_hat_k
+      # Contamination, within-fold, C_ij = min(1, rho_ij + xi_ij)  (A.10)
+      var_conta_k <- 0
+      if (!is.null(rho_mat) && is.matrix(rho_mat)) {
+        rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]   # n_e_k x n_e_k
+        xi_sub  <- rho_sub %*% t(rho_sub)                # xi_ij = sum_k rho_ik rho_jk
+        C_sub   <- pmin(rho_sub + xi_sub, 1)             # cap at 1
+        diag(C_sub) <- 0                                 # enforce i != j
+        s_k       <- sqrt(v_hat_k)
+        cov_sum_k <- as.numeric(t(s_k) %*% C_sub %*% s_k) # sum_{i!=j} C_ij sqrt(v_i v_j)
+        var_conta_k <- cov_sum_k / (u_k^2)               # NO pz(1-pz)
+      }
+
+      var_k[k] <- var_neyman_k + var_conta_k # var estimate in fold k
     }
 
     # --- Combine point est + Neyman var across folds (A.13) ---
     U_total <- sum(u_k_vec)                            # u_e
     w <- u_k_vec / U_total
     de_rd_agg <- sum(w * est_k, na.rm = TRUE)
-    var_neyman_agg <- sum((w^2) * var_neyman_k, na.rm = TRUE)  # = (1/u_e^2) sum_i v_i
-
-
-    # --- Contamination correction: GLOBAL, all i != j (A.10) ---
-    var_conta <- 0
-    if (!is.null(rho_mat) && is.matrix(rho_mat)) {
-      xi_mat <- rho_mat %*% t(rho_mat)                 # xi_ij = sum_k rho_ik rho_jk
-      C_mat  <- rho_mat + xi_mat                       # rho_ij + xi_ij
-      diag(C_mat) <- 0                                 # enforce i != j
-      s <- sqrt(v_hat_global)
-      cov_sum   <- as.numeric(t(s) %*% C_mat %*% s)    # sum_{i!=j} C_ij sqrt(v_i v_j)
-      var_conta <- cov_sum / (U_total^2)               # NO pz(1-pz)
-    }
-
-    de_rd_var_agg <- var_neyman_agg + var_conta
+    de_rd_var_agg <- sum((w^2) * var_k, na.rm = TRUE)
 
 
     results_list <- data.table::rbindlist(list(
