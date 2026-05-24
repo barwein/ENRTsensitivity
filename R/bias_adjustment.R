@@ -178,6 +178,7 @@ de_grid_multi_pi_kappa <- function(Y_e,
   if (is.null(folds_ids_e)){
     folds_ids_e <- rep(1, n_e)
   }
+  fold_levels <- sort(unique(folds_ids_e))
   n_folds <- length(unique(folds_ids_e))
 
   if(is.null(mu_e_1) || is.null(mu_e_0)) {
@@ -204,23 +205,23 @@ de_grid_multi_pi_kappa <- function(Y_e,
 
   results_list <- list()
 
-  for (r in 1:nrow(grid_params)){
+  for (r in seq_len(nrow(grid_params))){
     idx <- grid_params$pi_idx[r]
     k_val <- grid_params$kappa[r]
-    # pi_vec <- pi_list[[idx]]
     pi_vec <- pi_list[[idx]]$pi
-    rho_mat <- pi_list[[idx]]$rho
+    rho_mat <- pi_list[[idx]]$rho # n_e x n_e, diag = 0
 
     est_k <- numeric(n_folds)
-    var_k <- numeric(n_folds)
-    n_k_vec <- numeric(n_folds)
+    # var_k <- numeric(n_folds)
+    var_neyman_k <- numeric(n_folds) # neyman var in split k
     u_k_vec <- numeric(n_folds)
+    v_hat_global <- numeric(n_e) # v_i stored in original ego index
 
     # Run over the folds
     for (k in 1:n_folds) {
       idx_e <- folds_ids_e == k
       n_e_k <- sum(idx_e)
-      n_k_vec[k] <- n_e_k
+      if (n_e_k == 0) next
 
       # Subset data
       Y_e_k <- Y_e[idx_e]
@@ -239,69 +240,42 @@ de_grid_multi_pi_kappa <- function(Y_e,
       term2 <- (Y_e_k - mu_e_0_k) * (1 - Z_e_k) / (1 - pz)
       resid_diff <- mu_e_1_k - mu_e_0_k + term1 - term2
       mean_pi_k <- mean(pi_vec_k, na.rm = TRUE)
-      # weights_k <-  1 / (1 + pi_vec_k * (k_val - 1))
-      # weights_k <-  1 / (1 + mean_pi_k * (k_val - 1))
       u_k <- n_e_k*(1 + mean_pi_k * (k_val - 1)) # effective sample size adjustment
       u_k_vec[k] <- u_k # store u_k value for later weighting of combined estimates
-      # weighted_resid_diff <- weights_k * resid_diff
 
       # Point estimates for fold k:
-      # est_k[k] <- mean(weighted_resid_diff, na.rm = TRUE) # This is DE_k
-      # est_k[k] <- weights_k*mean(resid_diff, na.rm = TRUE) # This is DE_k
       est_k[k] <- sum(resid_diff, na.rm = TRUE) / u_k # This is DE_k
 
       # Variance estimate for Fold k:
       # Sum over alters for each ego-network
-      # D_ego_i <- weights_k*(term1 - term2)
       D_ego_i <- term1 - term2
-      # mean_D_i <- mean(D_ego_i, na.rm = TRUE)
       mean_D_i <- sum(D_ego_i, na.rm = TRUE) / u_k
       v_hat_k <- (D_ego_i - mean_D_i)^2
-      # sum_sq_diff <- sum((D_ego_i - mean_D_i) ^ 2, na.rm = TRUE)
-      sum_sq_diff <- sum(v_hat_k, na.rm = TRUE)
-      var_neyman <- sum_sq_diff / (u_k^2)
-      # var_neyman <- sum_sq_diff / (n_e_k^2)
-      # var_k[k] <- sum_sq_diff / n_e_k^2
+      var_neyman_k[k] <- sum(v_hat_k, na.rm = TRUE) / (u_k^2)
 
-     # Compute VIF correction term using rho matrix
-    if (!is.null(rho_mat) && is.matrix(rho_mat)) {
-
-        # Subset rho for units in this fold
-        # Note: We must subset both rows and cols to get the sub-graph of egos in this fold
-        rho_k_sub <- rho_mat[idx_e, idx_e]
-
-        # Calculate S matrix: Expected number of shared neighbors
-        # S_ij = sum_k rho_ik * rho_jk
-        S_mat <- rho_k_sub %*% t(rho_k_sub)
-
-        # We only sum over i != j. Set diagonal to 0.
-        # diag(S_mat) <- 0
-
-        # Conservative bound term: S_ij * sqrt(v_i * v_j)
-        sqrt_v <- sqrt(v_hat_k)
-
-        # Calculate quadratic form: sqrt_v' * S * sqrt_v
-        # This sums S_ij * sqrt(v_i) * sqrt(v_j) for all i, j
-        cov_sum <- as.numeric(t(sqrt_v) %*% S_mat %*% sqrt_v)
-
-        # Apply scaling factor: pz(1-pz) / N^2
-        # correction <- (pz * (1 - pz) / n_e_k^2) * cov_sum
-        correction <- (pz * (1 - pz) / (u_k^2)) * cov_sum
-      }
-
-      var_k[k] <- var_neyman + correction
-      # var_k[k] <- (var_neyman + correction)*(weights_k^2)
-
+      v_hat_global[idx_e] <- v_hat_k
     }
 
-    # Aggregation
-    # N_total <- sum(n_k_vec)
-    U_total <- sum(u_k_vec)
-    # weights <- n_k_vec / N_total
-    weights <- u_k_vec / U_total
+    # --- Combine point est + Neyman var across folds (A.13) ---
+    U_total <- sum(u_k_vec)                            # u_e
+    w <- u_k_vec / U_total
+    de_rd_agg <- sum(w * est_k, na.rm = TRUE)
+    var_neyman_agg <- sum((w^2) * var_neyman_k, na.rm = TRUE)  # = (1/u_e^2) sum_i v_i
 
-    de_rd_agg <- sum(weights * est_k, na.rm = TRUE)
-    de_rd_var_agg <- sum((weights^2) * var_k, na.rm = TRUE)
+
+    # --- Contamination correction: GLOBAL, all i != j (A.10) ---
+    var_conta <- 0
+    if (!is.null(rho_mat) && is.matrix(rho_mat)) {
+      xi_mat <- rho_mat %*% t(rho_mat)                 # xi_ij = sum_k rho_ik rho_jk
+      C_mat  <- rho_mat + xi_mat                       # rho_ij + xi_ij
+      diag(C_mat) <- 0                                 # enforce i != j
+      s <- sqrt(v_hat_global)
+      cov_sum   <- as.numeric(t(s) %*% C_mat %*% s)    # sum_{i!=j} C_ij sqrt(v_i v_j)
+      var_conta <- cov_sum / (U_total^2)               # NO pz(1-pz)
+    }
+
+    de_rd_var_agg <- var_neyman_agg + var_conta
+
 
     results_list <- data.table::rbindlist(list(
       results_list,
