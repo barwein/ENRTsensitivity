@@ -255,7 +255,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
       if (!is.null(rho_mat) && is.matrix(rho_mat)) {
         rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]   # n_e_k x n_e_k
         xi_sub  <- rho_sub %*% t(rho_sub)                # xi_ij = sum_k rho_ik rho_jk
-        C_sub   <- pmin(rho_sub + xi_sub, 1)             # cap at 1
+        # C_sub   <- pmin(rho_sub + xi_sub, 1)             # cap at 1
+        C_sub   <- pmin(xi_sub, 1)             # cap at 1
         diag(C_sub) <- 0                                 # enforce i != j
         s_k       <- sqrt(v_hat_k)
         cov_sum_k <- as.numeric(t(s_k) %*% C_sub %*% s_k) # sum_{i!=j} C_ij sqrt(v_i v_j)
