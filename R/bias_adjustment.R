@@ -371,7 +371,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
 
       # log{ prod_{k != i,j} A_ik * A_jk } via factorization
       log_row_sum <- rowSums(logA_full)
-      log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - 2 * logA_full
+      # log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - 2 * logA_full
+      log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - logA_full
       prod_a      <- exp(log_prod_a)            # n_e x n_e
 
       # log{ prod_{k != i,j} (1 - pz*(rho_ik + rho_jk + rho_ik*rho_jk)) }
@@ -385,7 +386,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
       }
       # Remove k = i and k = j contributions (each equals log A_full[i,j],
       # since rho_ii = rho_jj = 0).
-      log_first  <- log_first_full - 2 * logA_full
+      log_first  <- log_first_full - logA_full
+      # log_first  <- log_first_full - 2 * logA_full
       first_prod <- exp(log_first)
 
       # D_ij  (A.14)
