@@ -277,29 +277,37 @@ de_grid_multi_pi_kappa <- function(Y_e,
       var_conta_k <- 0
       if (!is.null(rho_mat) && is.matrix(rho_mat)) {
 
-        # Restrict rho^e to egos in fold k; enforce range and zero diagonal
-        rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]
-        rho_sub <- pmin(pmax(rho_sub, 0), 1)
-        diag(rho_sub) <- 0
+        # Full rho^e over all egos; enforce range and zero diagonal
+        rho_full <- pmin(pmax(rho_mat, 0), 1)
+        diag(rho_full) <- 0
 
-        # A_ij = 1 - p_z * rho_ij  (in [1 - p_z, 1], strictly positive)
-        A_mat <- 1 - pz * rho_sub
-        logA  <- log(A_mat)                 # diag(logA) = 0 since rho_ii = 0
+        # A_full[i,k] = 1 - pz * rho_ik, full n_e x n_e
+        A_full   <- 1 - pz * rho_full
+        logA_full <- log(A_full)                 # diag(logA_full) = 0
 
         # log{ prod_{k != i,j} A_ik * A_jk } using factorization:
         #   = sum_k logA[i,k] + sum_k logA[j,k] - logA[i,i] - logA[j,j]
         #     - logA[i,j] - logA[j,i]
         #   = row_sum[i] + row_sum[j] - 2 * logA[i,j]   (logA symmetric, diag 0)
-        log_row_sum <- rowSums(logA)
-        log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - 2 * logA
-        prod_a      <- exp(log_prod_a)      # used by D_ij and 2nd term of C_ij
+        log_row_sum_full <- rowSums(logA_full)
 
-        # log{ prod_{k != i,j} (1 - p_z*(rho_ik + rho_jk + rho_ik*rho_jk)) }
-        # No (i,j)-factorization: accumulate a sum over k via outer products.
-        # B_k[i,j] = 1 - p_z * ( rho_{ik} + rho_{jk} + rho_{ik}*rho_{jk} )
+        # Restrict to fold for (i, j) pairs
+        log_row_sum_fold <- log_row_sum_full[idx_e]    # length n_e_k
+        logA_fold        <- logA_full[idx_e, idx_e, drop = FALSE]
+        rho_fold         <- rho_full[idx_e, idx_e, drop = FALSE]
+        # Rows of rho restricted to fold egos but all columns (k spans R_e)
+        rho_fold_rows    <- rho_full[idx_e, , drop = FALSE]   # n_e_k x n_e_tot
+
+        log_prod_a <- outer(log_row_sum_fold, log_row_sum_fold, "+") -
+          2 * logA_fold
+        prod_a <- exp(log_prod_a)              # n_e_k x n_e_k
+
+
+        # log{ prod_{k in R_e, k != i,j} (1 - pz*(rho_ik + rho_jk + rho_ik*rho_jk)) }
+        # Accumulate over ALL k in R_e via outer products on fold rows.
         log_first_full <- matrix(0, n_e_k, n_e_k)
         for (kk in seq_len(n_e_k)) {
-          r_kk <- rho_sub[, kk]
+          r_kk <- rho_fold_rows[, kk]          # rho_{i, kk} for i in fold
           B_kk <- 1 - pz * (outer(r_kk, r_kk, "+") + outer(r_kk, r_kk, "*"))
           # Guard against pathological negatives (shouldn't happen with rho in [0,1]
           # and pz in (0,1), but enforce numerically)
@@ -310,18 +318,19 @@ de_grid_multi_pi_kappa <- function(Y_e,
         # When k = i: B_i[i,j] = 1 - p_z*(rho_ii + rho_ji + rho_ii*rho_ji)
         #                     = 1 - p_z*rho_ij = A_mat[i,j] (using rho_ii = 0).
         # Symmetric argument for k = j. So subtract 2 * logA[i,j].
-        log_first <- log_first_full - 2 * logA
+        log_first  <- log_first_full - 2 * logA_fold
         first_prod <- exp(log_first)
 
-        # D_ij  (A.14)
-        D_mat <- pz^2 * rho_sub * (1 - rho_sub) * prod_a
+        # D_ij  (A.14), restricted to fold (i, j)
+        D_mat <- pz^2 * rho_fold * (1 - rho_fold) * prod_a
         diag(D_mat) <- 0
 
-        # C_ij  (A.15)
-        coef_first  <- 1 - 2 * pz * rho_sub + (pz^2) * rho_sub
-        coef_second <- (1 - pz * rho_sub)^2
+        # C_ij  (A.15), restricted to fold (i, j)
+        coef_first  <- 1 - 2 * pz * rho_fold + (pz^2) * rho_fold
+        coef_second <- (1 - pz * rho_fold)^2
         C_mat <- coef_first * first_prod - coef_second * prod_a
         diag(C_mat) <- 0
+
 
         sum_CD <- sum(C_mat) + sum(D_mat)                # diag already 0
         de_kappa_sq <- (est_k[k] * (k_val - 1))^2        # [DE_adj[q] * (kappa-1)]^2
