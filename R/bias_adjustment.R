@@ -250,20 +250,86 @@ de_grid_multi_pi_kappa <- function(Y_e,
       v_hat_k <- (D_ego_i - mean_D_i)^2
       var_neyman_k <- sum(v_hat_k, na.rm = TRUE) / (u_k^2)
 
-      # Contamination, within-fold, C_ij = min(1, rho_ij + xi_ij)  (A.10)
+      # # Contamination, within-fold, C_ij = min(1, rho_ij + xi_ij)  (A.10)
+      # var_conta_k <- 0
+      # if (!is.null(rho_mat) && is.matrix(rho_mat)) {
+      #   rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]   # n_e_k x n_e_k
+      #   xi_sub  <- rho_sub %*% t(rho_sub)                # xi_ij = sum_k rho_ik rho_jk
+      #   # C_sub   <- pmin(rho_sub + xi_sub, 1)             # cap at 1
+      #   C_sub   <- pmin(xi_sub, 1)             # cap at 1
+      #   diag(C_sub) <- 0                                 # enforce i != j
+      #   s_k       <- sqrt(v_hat_k)
+      #   cov_sum_k <- as.numeric(t(s_k) %*% C_sub %*% s_k) # sum_{i!=j} C_ij sqrt(v_i v_j)
+      #   var_conta_k <- cov_sum_k / (u_k^2)               # NO pz(1-pz)
+      # }
+      #
+      # var_k[k] <- var_neyman_k + var_conta_k # var estimate in fold k
+
+      # ------------------------------------------------------------------
+      # Contamination-attributed variance (A.17), with C_ij (A.15) and
+      # D_ij (A.14) computed within the current fold's egos only.
+      #
+      # V_Conta[q] = [ DE_adj[q] * (kappa - 1) ]^2 / u_e[q]^2
+      #              * sum_{i != j in R_e ∩ S_q} ( C_ij + D_ij )
+      #
+      # Vanishes when kappa == 1 (covers the Naive case) or when rho == 0.
+      # ------------------------------------------------------------------
       var_conta_k <- 0
       if (!is.null(rho_mat) && is.matrix(rho_mat)) {
-        rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]   # n_e_k x n_e_k
-        xi_sub  <- rho_sub %*% t(rho_sub)                # xi_ij = sum_k rho_ik rho_jk
-        # C_sub   <- pmin(rho_sub + xi_sub, 1)             # cap at 1
-        C_sub   <- pmin(xi_sub, 1)             # cap at 1
-        diag(C_sub) <- 0                                 # enforce i != j
-        s_k       <- sqrt(v_hat_k)
-        cov_sum_k <- as.numeric(t(s_k) %*% C_sub %*% s_k) # sum_{i!=j} C_ij sqrt(v_i v_j)
-        var_conta_k <- cov_sum_k / (u_k^2)               # NO pz(1-pz)
+
+        # Restrict rho^e to egos in fold k; enforce range and zero diagonal
+        rho_sub <- rho_mat[idx_e, idx_e, drop = FALSE]
+        rho_sub <- pmin(pmax(rho_sub, 0), 1)
+        diag(rho_sub) <- 0
+
+        # A_ij = 1 - p_z * rho_ij  (in [1 - p_z, 1], strictly positive)
+        A_mat <- 1 - pz * rho_sub
+        logA  <- log(A_mat)                 # diag(logA) = 0 since rho_ii = 0
+
+        # log{ prod_{k != i,j} A_ik * A_jk } using factorization:
+        #   = sum_k logA[i,k] + sum_k logA[j,k] - logA[i,i] - logA[j,j]
+        #     - logA[i,j] - logA[j,i]
+        #   = row_sum[i] + row_sum[j] - 2 * logA[i,j]   (logA symmetric, diag 0)
+        log_row_sum <- rowSums(logA)
+        log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - 2 * logA
+        prod_a      <- exp(log_prod_a)      # used by D_ij and 2nd term of C_ij
+
+        # log{ prod_{k != i,j} (1 - p_z*(rho_ik + rho_jk + rho_ik*rho_jk)) }
+        # No (i,j)-factorization: accumulate a sum over k via outer products.
+        # B_k[i,j] = 1 - p_z * ( rho_{ik} + rho_{jk} + rho_{ik}*rho_{jk} )
+        log_first_full <- matrix(0, n_e_k, n_e_k)
+        for (kk in seq_len(n_e_k)) {
+          r_kk <- rho_sub[, kk]
+          B_kk <- 1 - pz * (outer(r_kk, r_kk, "+") + outer(r_kk, r_kk, "*"))
+          # Guard against pathological negatives (shouldn't happen with rho in [0,1]
+          # and pz in (0,1), but enforce numerically)
+          B_kk[B_kk <= 0] <- .Machine$double.eps
+          log_first_full <- log_first_full + log(B_kk)
+        }
+        # Remove the k = i and k = j terms.
+        # When k = i: B_i[i,j] = 1 - p_z*(rho_ii + rho_ji + rho_ii*rho_ji)
+        #                     = 1 - p_z*rho_ij = A_mat[i,j] (using rho_ii = 0).
+        # Symmetric argument for k = j. So subtract 2 * logA[i,j].
+        log_first <- log_first_full - 2 * logA
+        first_prod <- exp(log_first)
+
+        # D_ij  (A.14)
+        D_mat <- pz^2 * rho_sub * (1 - rho_sub) * prod_a
+        diag(D_mat) <- 0
+
+        # C_ij  (A.15)
+        coef_first  <- 1 - 2 * pz * rho_sub + (pz^2) * rho_sub
+        coef_second <- (1 - pz * rho_sub)^2
+        C_mat <- coef_first * first_prod - coef_second * prod_a
+        diag(C_mat) <- 0
+
+        sum_CD <- sum(C_mat) + sum(D_mat)                # diag already 0
+        de_kappa_sq <- (est_k[k] * (k_val - 1))^2        # [DE_adj[q] * (kappa-1)]^2
+        var_conta_k <- (de_kappa_sq / (u_k^2)) * sum_CD
       }
 
-      var_k[k] <- var_neyman_k + var_conta_k # var estimate in fold k
+      var_k[k] <- var_neyman_k + var_conta_k             # fold-k total variance
+
     }
 
     # --- Combine point est + Neyman var across folds (A.13) ---
