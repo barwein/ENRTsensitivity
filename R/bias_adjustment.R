@@ -213,7 +213,16 @@ de_grid_multi_pi_kappa <- function(Y_e,
     est_k <- numeric(n_folds)
     # var_k <- numeric(n_folds)
     var_neyman_k <- numeric(n_folds)
+    var_conta_k    <- numeric(n_folds)
     u_k_vec <- numeric(n_folds)
+
+    # Pre-clean rho^e once (reused across folds for sub-indexing)
+    if (!is.null(rho_mat) && is.matrix(rho_mat)) {
+      rho_full <- pmin(pmax(rho_mat, 0), 1)
+      diag(rho_full) <- 0
+    } else {
+      rho_full <- NULL
+    }
 
     # Run over the folds
     for (k in 1:n_folds) {
@@ -250,6 +259,29 @@ de_grid_multi_pi_kappa <- function(Y_e,
       mean_D_i <- sum(D_ego_i, na.rm = TRUE) / u_k
       v_hat_k <- (D_ego_i - mean_D_i)^2
       var_neyman_k[k] <- sum(v_hat_k, na.rm = TRUE) / (u_k^2)
+
+      # Covariance estimation (contamination variance)
+      if (!is.null(rho_full) && n_e_k >= 2) {
+        rho_fold <- rho_full[idx_e, idx_e, drop = FALSE]   # n_e_k x n_e_k
+        diag(rho_fold) <- 0
+
+        log_prod_k <- matrix(0, n_e_k, n_e_k)
+        for (mm in seq_len(n_e_k)) {
+          r_mm <- rho_fold[, mm]
+          M_mm <- 1 - outer(r_mm, r_mm, "*")               # 1 - rho_im * rho_jm
+          M_mm[M_mm <= 0] <- .Machine$double.eps
+          log_prod_k <- log_prod_k + log(M_mm)
+        }
+        prod_k   <- exp(log_prod_k)                        # prod_m (1 - rho_im*rho_jm)
+        xi_k   <- (1 - (1 - rho_fold) * prod_k)/2       # xi_ij = 1/2 * (1 - prod_m (1 - rho_im*rho_jm)) is the covariance adjustment factor for i!=j
+        diag(xi_k) <- 0
+        xi_k[xi_k < 0] <- 0
+        xi_k[xi_k > 1] <- 1
+
+        s_k <- sqrt(v_hat_k)
+        cov_sum_k <- as.numeric(crossprod(s_k, xi_k %*% s_k))
+        var_conta_k[k] <- cov_sum_k / (u_k^2)
+      }
     }
 
       # # Contamination, within-fold, C_ij = min(1, rho_ij + xi_ij)  (A.10)
@@ -273,102 +305,8 @@ de_grid_multi_pi_kappa <- function(Y_e,
     w             <- u_k_vec / U_total
     de_rd_agg     <- sum(w * est_k, na.rm = TRUE)
     var_neyman_agg <- sum((w^2) * var_neyman_k, na.rm = TRUE)
-
-    var_conta_agg <- 0
-    if (!is.null(rho_mat) && is.matrix(rho_mat) && n_e >= 2) {
-
-      # Enforce range and zero diagonal on rho^e
-      rho_full <- pmin(pmax(rho_mat, 0), 1)
-      diag(rho_full) <- 0
-
-      # --- Compute zeta_ij via log factorization ---
-      # log prod_k (1 - rho_ik * rho_jk) = sum_k log(1 - rho_ik * rho_jk)
-      log_prod <- matrix(0, n_e, n_e)
-      for (kk in seq_len(n_e)) {
-        r_kk  <- rho_full[, kk]
-        M_kk  <- 1 - outer(r_kk, r_kk, "*")              # 1 - rho_ik * rho_jk
-        M_kk[M_kk <= 0] <- .Machine$double.eps           # numerical guard
-        log_prod <- log_prod + log(M_kk)
-      }
-      prod_all  <- exp(log_prod)                          # prod_k (1 - rho_ik*rho_jk)
-      zeta_mat  <- 1 - (1 - rho_full) * prod_all
-      diag(zeta_mat) <- 0
-      zeta_mat[zeta_mat < 0] <- 0
-      zeta_mat[zeta_mat > 1] <- 1
-
-      # --- Per-unit residual variance estimates v_i (global centering) ---
-      term1_full <- (Y_e - mu_e_1) * Z_e       / pz
-      term2_full <- (Y_e - mu_e_0) * (1 - Z_e) / (1 - pz)
-      D_full     <- term1_full - term2_full
-      mean_D_full <- sum(D_full, na.rm = TRUE) / U_total
-      v_hat_full  <- (D_full - mean_D_full)^2
-      s_full      <- sqrt(v_hat_full)
-
-      # --- Quadratic form: sum_{i != j} zeta_ij * s_i * s_j (diag already 0) ---
-      cov_sum       <- as.numeric(crossprod(s_full, zeta_mat %*% s_full))
-      var_conta_agg <- cov_sum / (U_total^2)
-    }
-
-    de_rd_var_agg <- var_neyman_agg + var_conta_agg
-
-
-    # --- Global contamination-attributed variance (A.7) ---
-    # Pairs (i, j) over ALL egos in R_e; products over k in R_e, k != i, j;
-    # plug-in uses the aggregated estimate de_rd_agg.
-    #
-    # V_Conta = [ de_rd_agg * (kappa - 1) ]^2 / u_e^2
-    #           * sum_{i != j in R_e} ( C_ij + D_ij ),
-    # with C_ij and D_ij  as in the appendix.
-    # Vanishes when kappa == 1 or rho == 0.
-    # var_conta_agg <- 0
-    # if (!is.null(rho_mat) && is.matrix(rho_mat) &&
-    #     abs(k_val - 1) > 1e-12 && n_e >= 2) {
-    #
-    #   # Full rho^e; enforce range and zero diagonal
-    #   rho_full <- pmin(pmax(rho_mat, 0), 1)
-    #   diag(rho_full) <- 0
-    #
-    #   # A[i,k] = 1 - pz * rho_ik
-    #   A_full    <- 1 - pz * rho_full
-    #   logA_full <- log(A_full)                  # diag(logA_full) = 0
-    #
-    #   # log{ prod_{k != i,j} A_ik * A_jk } via factorization
-    #   log_row_sum <- rowSums(logA_full)
-    #   log_prod_a  <- outer(log_row_sum, log_row_sum, "+") - 2 * logA_full
-    #   # log_prod_a  <- outer(log_row_sum, log_row_sum, "+")
-    #   prod_a      <- exp(log_prod_a)            # n_e x n_e
-    #
-    #   # log{ prod_{k != i,j} (1 - pz*(rho_ik + rho_jk + rho_ik*rho_jk)) }
-    #   # Accumulate over all k in R_e.
-    #   log_first_full <- matrix(0, n_e, n_e)
-    #   for (kk in seq_len(n_e)) {
-    #     r_kk <- rho_full[, kk]
-    #     B_kk <- 1 - pz * (outer(r_kk, r_kk, "+") - outer(r_kk, r_kk, "*"))
-    #     B_kk[B_kk <= 0] <- .Machine$double.eps  # numerical guard
-    #     log_first_full <- log_first_full + log(B_kk)
-    #   }
-    #   # Remove k = i and k = j contributions (each equals log A_full[i,j],
-    #   # since rho_ii = rho_jj = 0).
-    #   # log_first  <- log_first_full
-    #   log_first  <- log_first_full - 2 * logA_full
-    #   first_prod <- exp(log_first)
-    #
-    #   # D_ij  (A.14)
-    #   D_mat <- (pz^2) * rho_full * (1 - rho_full) * prod_a
-    #   diag(D_mat) <- 0
-    #
-    #   # C_ij  (A.15)
-    #   coef_first  <- 1 - 2 * pz * rho_full + (pz^2) * rho_full
-    #   coef_second <- (1 - pz * rho_full)^2
-    #   C_mat <- coef_first * first_prod - coef_second * prod_a
-    #   diag(C_mat) <- 0
-    #
-    #   sum_CD      <- sum(C_mat) + sum(D_mat)
-    #   de_kappa_sq <- (de_rd_agg * (k_val - 1))^2    # aggregate plug-in
-    #   var_conta_agg <- (de_kappa_sq / (U_total^2)) * sum_CD
-    # }
-    #
-    # de_rd_var_agg <- var_neyman_agg + var_conta_agg
+    var_conta_agg  <- sum((w^2) * var_conta_k,  na.rm = TRUE)
+    de_rd_var_agg  <- var_neyman_agg + var_conta_agg
 
     results_list <- data.table::rbindlist(list(
       results_list,
