@@ -272,8 +272,9 @@ de_grid_multi_pi_kappa <- function(Y_e,
           M_mm[M_mm <= 0] <- .Machine$double.eps
           log_prod_k <- log_prod_k + log(M_mm)
         }
-        prod_k   <- exp(log_prod_k)                        # prod_m (1 - rho_im*rho_jm)
-        xi_k   <- (1 - (1 - rho_fold) * prod_k)/2       # xi_ij = 1/2 * (1 - prod_m (1 - rho_im*rho_jm)) is the covariance adjustment factor for i!=j
+        prod_k <- exp(log_prod_k)                        # prod_m (1 - rho_im*rho_jm)
+        # xi_k   <- (1 - (1 - rho_fold) * prod_k)/2       # xi_ij = 1/2 * (1 - prod_m (1 - rho_im*rho_jm)) is the covariance adjustment factor for i!=j
+        xi_k <- (1 -  prod_k)/2       # xi_ij = 1/2 * (1 - prod_m (1 - rho_im*rho_jm)) is the covariance adjustment factor for i!=j
         diag(xi_k) <- 0
         xi_k[xi_k < 0] <- 0
         xi_k[xi_k > 1] <- 1

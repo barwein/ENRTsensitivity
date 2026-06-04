@@ -1,7 +1,7 @@
 Package: ENRTsensitivity
 Type: Package
 Title: Sensitivity Analysis for Contamination in Egocentric-Network Randomized Trials with Interference
-Version: 0.3.0
+Version: 0.3.1
 Authors@R:
     person("Bar", "Weinstein",
            email = "weinstein.bar@gmail.com",
